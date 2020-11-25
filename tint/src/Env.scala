@@ -11,6 +11,7 @@ class EnvVar(var value: js.Any) {
   override def toString(): String = s"EnvVar<$value>"
 }
 
+// Use LocalName's for lookups, not LocalIdent's
 class Env(table: Map[LocalIdent, EnvVar], ths: Option[js.Any] = None) {
 
   /** Augments the environment with a variable binding: returns new Env */
@@ -54,5 +55,5 @@ class Env(table: Map[LocalIdent, EnvVar], ths: Option[js.Any] = None) {
 }
 
 object Env {
-  def empty = new Env(Map())  
+  def empty = new Env(Map())
 }

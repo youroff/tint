@@ -39,21 +39,22 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case StringLiteral(value) => value
       case CharLiteral(value) => value
       case IntLiteral(value) => value
-      case LongLiteral(value) => value
+      case LongLiteral(value) => value // !!! implicitly converts to Double; not what we want
       case DoubleLiteral(value) => value
       case BooleanLiteral(value) => value
       case Null() => null
       case Undefined() => js.undefined
-      case ArrayValue(_, value) => value
+      case ArrayValue(_, value) => value // !!! implicitly creates a js.Function1; not what we want
       case This() => env.getThis
       case VarRef(name) => env.read(name)
 
       case JSLinkingInfo() => linkingInfo
 
+      // !!! cannot ignore className
       case Select(tree, _, field) => eval(tree) match {
         case instance: Instance =>
           instance.getField(field)
-        case rest => unimplemented(rest, "Select")
+        case rest => unimplemented(rest, "Select") // ~~~ I think this cannot happen in a valid program
       }
 
       case JSSelect(receiver, prop) =>
@@ -70,12 +71,12 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
           case "string" =>
             val met = lookupMethodDef(BoxedStringClass, method)
             eval(met.body.get)(bindArgs(met.args, args).setThis(rest))
-          case something => unimplemented(rest, s"Apply as ${something}")
+          case something => unimplemented(rest, s"Apply as ${something}") // !!! need to handle the other primitive types
         }
       }
 
       case ApplyStatically(_flags, tree, className, methodIdent, args) => eval(tree) match {
-        case instance: Instance =>
+        case instance: Instance => // !!! ApplyStatically does not require an Instance; it can work with any type of value
           val methodDef = lookupMethodDef(className, methodIdent)
           eval(methodDef.body.get)(bindArgs(methodDef.args, args).setThis(instance))
         case rest => unimplemented(rest, "ApplyStatically")
@@ -84,13 +85,15 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case ApplyStatic(_flags, className, methodIdent, args) =>
         val methodDef = lookupMethodDef(className, methodIdent)
         eval(methodDef.body.get)(bindArgs(methodDef.args, args))
-      
+
       case New(name, ctor, args) =>
         val instance = new Instance(name)
+        // !!! Need to initialize the fields according to the FieldDefs in the LinkedClass and its parent classes
         val ctorDef = lookupMethodDef(name, ctor)
         eval(ctorDef.body.get)(bindArgs(ctorDef.args, args).setThis(instance))
+        // !!! the `body` of a constructor is a statement with result value; so need to explicitly return `instance` here
 
-      case LoadModule(name) => modules.getOrElse(name, {
+      case LoadModule(name) => modules.getOrElse(name, { // !!! use getOrElseUpdate here, to really match the semantics
         val instance = new Instance(name)
         val initializer = lookupInitializer(name)
         eval(initializer.body.get)(env.setThis(instance))
@@ -99,7 +102,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
 
       case StoreModule(name, tree) => eval(tree) match {
         case mod: Instance => modules.update(name, mod)
-        case rest => unimplemented(rest, "StoreModule")
+        case rest => unimplemented(rest, "StoreModule") // ~~~ cannot happen in a valid program
       }
 
       case Assign(lhs, rhs) => lhs match {
@@ -110,9 +113,9 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         case Select(qualifier, _, field) => eval(qualifier) match {
           case instance: Instance =>
             instance.setField(field, eval(rhs))
-          case rest => unimplemented(rest, "Assign -> Select")
+          case rest => unimplemented(rest, "Assign -> Select") // ~~~ cannot happen in a valid program
         }
-        case JSSelect(VarRef(name), prop) => {
+        case JSSelect(VarRef(name), prop) => { // !!! the qualifier could be anything; it should be eval'ed
           val obj = env.read(name).asInstanceOf[RawJSValue]
           obj.jsPropertySet(eval(prop), eval(rhs))
         }
@@ -125,7 +128,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case If(cond, thenp, elsep) =>
         if (eval(cond).asInstanceOf[Boolean]) eval(thenp) else eval(elsep)
 
-      case While(cond, body) => 
+      case While(cond, body) =>
         while (eval(cond).asInstanceOf[Boolean]) eval(body)
 
       // TODO: Implement object construction
@@ -135,9 +138,10 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
 
       case AsInstanceOf(tree, tpe) => cast(eval(tree), tpe)
 
-      case BinaryOp(BinaryOp.===, l, r) => eval(l) == eval(r)
-      case BinaryOp(BinaryOp.!==, l, r) => eval(l) != eval(r)
+      case BinaryOp(BinaryOp.===, l, r) => eval(l) == eval(r) // !!! must be js.special.strictEquals(...)
+      case BinaryOp(BinaryOp.!==, l, r) => eval(l) != eval(r) // !!! must be !js.special.strictEquals(...)
       case BinaryOp(BinaryOp.String_+, l, r) => //3
+        // !!! Need to *convert* to string here (String_+ is special); in practice `"" + eval(l) + eval(r)` will do the right thing
         eval(l).asInstanceOf[String] + eval(r).asInstanceOf[String]
       case BinaryOp(BinaryOp.Boolean_==, l, r) => // 4
         eval(l).asInstanceOf[Boolean] == eval(r).asInstanceOf[Boolean]
@@ -152,7 +156,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         eval(l).asInstanceOf[Int] + eval(r).asInstanceOf[Int]
       case BinaryOp(BinaryOp.Int_-, l, r) => // 9
         eval(l).asInstanceOf[Int] - eval(r).asInstanceOf[Int]
-      
+
       case BinaryOp(BinaryOp.Int_==, l, r) => // 19
         eval(l).asInstanceOf[Int] == eval(r).asInstanceOf[Int]
       case BinaryOp(BinaryOp.Int_!=, l, r) => // 20
@@ -182,6 +186,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case UnaryOp(UnaryOp.Boolean_!, t) => !eval(t).asInstanceOf[Boolean] // 1
 
       // TODO: asInstanceOf[Char].toInt isn't working
+      // !!! Chars, like Longs, need to be stored in their own special objects (similar to Instance)
       case UnaryOp(UnaryOp.CharToInt, t) => eval(t).asInstanceOf[Int]//.toInt // 2
       case UnaryOp(UnaryOp.ByteToInt, t) => eval(t).asInstanceOf[Byte].toInt // 3
       case UnaryOp(UnaryOp.ShortToInt, t) => eval(t).asInstanceOf[Short].toInt // 4
@@ -192,7 +197,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
 
       // TODO: asInstanceOf[Long] is failing with undefined behavior: not an instance of Long
       case UnaryOp(UnaryOp.LongToDouble, t) => eval(t).asInstanceOf[Int].toDouble // 14
-      
+
       case rest =>
         unimplemented(rest, "root")
     }
@@ -201,13 +206,14 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
   }
 
   def bindArgs(args: List[ParamDef], values: List[Tree])(implicit env: Env): Env = {
+    // !!! should start with an empty Env here
     args.zip(values map eval).foldLeft(env) {
-      case (env, (paramDef, arg)) => env.bind(paramDef.name, arg) 
+      case (env, (paramDef, arg)) => env.bind(paramDef.name, arg)
     }
   }
 
   def evalBlock(stmts: List[Tree])(implicit env: Env): js.Any = stmts match {
-    case VarDef(name, _, _, _, e) :: rest => 
+    case VarDef(name, _, _, _, e) :: rest =>
       evalBlock(rest)(env.bind(name, eval(e)))
     case e :: Nil =>
       eval(e)
@@ -221,13 +227,17 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     classes.get(name).get
   }
 
+  // !!! Use MethodName's for lookups, not MethodIdent's
   def lookupMethodDef(name: ClassName, method: MethodIdent): MethodDef = {
+    // !!! Need to take the MemberNamespace into account
+    // !!! And if it is MemberNamespace.Public, need to search in parent classes as well; and then even in implemented interfaces
     lookupClassDef(name).methods.find(_.value.name == method).get.value
   }
 
   def lookupInitializer(name: ClassName): MethodDef = {
     // There can be many initializers with different signatures,
     // some more elaborate logic to pick the right one?
+    // ~~~ It should be the one whose full name is NoArgConstructorName
     lookupClassDef(name).methods.find(_.value.methodName.simpleName == ConstructorSimpleName).get.value
   }
 
@@ -239,8 +249,8 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     case ClassType(BoxedStringClass) => value.asInstanceOf[String]
     case BooleanType => value.asInstanceOf[Boolean]
     case IntType => value.asInstanceOf[Int]
-    case rest => unimplemented(tpe, "CAST")(Env.empty)
-  } 
+    case rest => unimplemented(tpe, "CAST")(Env.empty) // !!! at worst, just return `value`; don't crash
+  }
 
   def unimplemented(t: Any, site: String = "default")(implicit env: Env) = {
     println(s"Called at $site")

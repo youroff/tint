@@ -6,6 +6,7 @@ import org.scalajs.ir.Names._
 import org.scalajs.ir.Trees._
 
 class Instance(val className: ClassName) extends js.Object {
+  // !!! Use FieldName's for lookups, not FieldIdent's
   val fields: mutable.Map[FieldIdent, js.Any] = mutable.Map()
 
   def setField(field: FieldIdent, value: js.Any) = fields.update(field, value)
