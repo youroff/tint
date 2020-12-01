@@ -9,6 +9,7 @@ import org.scalajs.linker.standard.LinkedClass
 import org.scalajs.ir.Position.NoPosition
 import scala.scalajs.LinkingInfo
 import org.scalajs.ir.ScalaJSVersions
+import scala.scalajs.js.annotation.JSExport
 
 class Executor(classes: Map[ClassName, LinkedClass]) {
   val modules: mutable.Map[ClassName, Instance] = mutable.Map()
@@ -20,6 +21,11 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
 
   def execute(program: Tree): Unit = {
     eval(program)(Env.empty)
+  }
+
+  @JSExport("evalJSExports")
+  def evalJSExports(body: Tree, args: js.Array[js.Any]): js.Any = {
+    ???
   }
 
   def eval(program: Tree)(implicit env: Env): js.Any = {
@@ -37,7 +43,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case JSGlobalRef(name) =>
         lookupGlobalVar(name)
       case StringLiteral(value) => value
-      case CharLiteral(value) => value
+      case CharLiteral(value) => value // !!! implicitly converts to Int; not what we want
       case IntLiteral(value) => value
       case LongLiteral(value) => value // !!! implicitly converts to Double; not what we want
       case DoubleLiteral(value) => value
@@ -67,6 +73,8 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
           val methodDef = lookupMethodDef(instance.className, method)
           eval(methodDef.body.get)(bindArgs(methodDef.args, args).setThis(instance))
         }
+        /*case instance: String =>
+          // ...*/
         case rest => js.typeOf(rest) match {
           case "string" =>
             val met = lookupMethodDef(BoxedStringClass, method)
@@ -123,7 +131,13 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       }
 
       // TODO: Implement TryCatch and Error propagation
-      case TryCatch(block, errVar, _, handler) => eval(block)
+      case TryCatch(block, errVar, _, handler) =>
+        try {
+          eval(block)
+        } catch {
+          case js.JavaScriptException(e) =>
+            eval(handler)(env.bind(errVar, e.asInstanceOf[js.Any]))
+        }
 
       case If(cond, thenp, elsep) =>
         if (eval(cond).asInstanceOf[Boolean]) eval(thenp) else eval(elsep)
@@ -211,6 +225,13 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case (env, (paramDef, arg)) => env.bind(paramDef.name, arg)
     }
   }
+
+  def bar(y: Int): Int = {
+    //def foo(x: Int): Int = x + 1 + y
+    foo(y, y)
+  }
+
+  private def foo(x: Int, y: Int): Int = x + 1 + y
 
   def evalBlock(stmts: List[Tree])(implicit env: Env): js.Any = stmts match {
     case VarDef(name, _, _, _, e) :: rest =>

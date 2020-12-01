@@ -5,13 +5,16 @@ import org.scalajs.ir.Trees._
 import org.scalajs.ir.Position
 import org.scalajs.ir.Types._
 import org.scalajs.ir.Names.ClassName
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 object Tint {
   def main(args: Array[String]): Unit = {
+    import scala.concurrent.ExecutionContext.Implicits.global
     Linker.link(
       Seq("out/sample/compile/dest/classes/sample"),
       "sample.Sample"
-    ) { unit =>
+    ).foreach { unit =>
       val defs = unit.classDefs.map(c => (c.name.name, c)).toMap
       val executor = new Executor(defs)
 
@@ -22,6 +25,10 @@ object Tint {
           val tree = ApplyStatic(ApplyFlags.empty, className, MethodIdent(methodName), values)(NoType)
           executor.execute(tree)
       }
+    }
+
+    scala.scalajs.js.timers.setTimeout(5000) {
+      println("done")
     }
   }
 

@@ -34,7 +34,7 @@ object Linker {
     }
   }
 
-  def link(classPath: Seq[String], mainClass: String)(runner: LinkingUnit => Unit): Unit = {
+  def link(classPath: Seq[String], mainClass: String): Future[LinkingUnit] = {
     val stdPath = "std/scalajs-library_2.13-1.2.0.jar"
     val mainName = "main"
     val cache = StandardImpl.irFileCache().newCache
@@ -50,8 +50,8 @@ object Linker {
       case (irContainers, _) => cache.cached(irContainers)
     }.flatMap { irFiles =>
       linker.link(irFiles, Seq(initializer), output, new ScalaConsoleLogger(Level.Error))
-    }.foreach { _ =>
-      runner(backend.linkingUnit)
+    }.map { _ =>
+      backend.linkingUnit
     }
   }
 }
