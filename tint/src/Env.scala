@@ -2,6 +2,8 @@ package tint
 
 import org.scalajs.ir.Trees._
 import scala.scalajs.js
+import org.scalajs.ir.Names.LocalName
+import utils.Utils.OptionsOps
 
 class EnvVar(var value: js.Any) {
   def update(newValue: js.Any) = {
@@ -11,25 +13,30 @@ class EnvVar(var value: js.Any) {
   override def toString(): String = s"EnvVar<$value>"
 }
 
-class Env(table: Map[LocalIdent, EnvVar], ths: Option[js.Any] = None) {
+class Env(table: Map[LocalName, EnvVar], ths: Option[js.Any]) {
+
+  def exposeThis = ths match {
+    case Some(t) => println("This: " + t)
+    case None => println("No This")
+  }
 
   /** Augments the environment with a variable binding: returns new Env */
-  def bind(name: LocalIdent, value: js.Any) = {
+  def bind(name: LocalName, value: js.Any) = {
     // if (value.toString() == "[object Object]")
     //   println(s"binding $name with {${js.Object.entries(value.asInstanceOf[js.Object])}}")
     // else
     //   println(s"binding $name with $value")
-    new Env(table + (name -> new EnvVar(value)))
+    new Env(table + (name -> new EnvVar(value)), ths)
   }
 
   /** Updates variable value */
-  def assign(name: LocalIdent, value: js.Any) {
+  def assign(name: LocalName, value: js.Any) {
     // println(s"assigning $name with $value")
     lookup(name).update(value)
   }
 
   /** Reads variable value */
-  def read(name: LocalIdent): js.Any = {
+  def read(name: LocalName): js.Any = {
     lookup(name).value
   }
 
@@ -37,22 +44,14 @@ class Env(table: Map[LocalIdent, EnvVar], ths: Option[js.Any] = None) {
     new Env(table, Some(instance))
   }
 
-  def getThis: js.Any = ths match {
-    case Some(instance) => instance
-    case None => throw new NoSuchElementException("No THIS in current Env")
-  }
+  def getThis: js.Any = ths.getOrThrow("No THIS in current Env")
 
   override def toString(): String = table.toString()
 
   private
-  def lookup(name: LocalIdent): EnvVar = {
-    table.get(name) match {
-      case Some(value) => value
-      case None => throw new NoSuchElementException(s"No variable $name in Env")
-    }
-  }
+  def lookup(name: LocalName): EnvVar = table.get(name).getOrThrow(s"No variable $name in Env")
 }
 
 object Env {
-  def empty = new Env(Map())  
+  def empty = new Env(Map(), None)  
 }

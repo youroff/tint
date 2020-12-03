@@ -14,29 +14,29 @@ object EnvTests extends TestSuite{
     test("multiworld splitting and propagating updates") {
       val env = Env.empty
 
-      val identX = LocalIdent(LocalName("x"))
-      val envX = env.bind(identX, 0)
+      val x = LocalName("x")
+      val envX = env.bind(x, 0)
 
-      val identY = LocalIdent(LocalName("y"))
-      val envY = envX.bind(identY, 1)
-      envX.read(identX) ==> envY.read(identX)
+      val y = LocalName("y")
+      val envY = envX.bind(y, 1)
+      envX.read(x) ==> envY.read(x)
 
-      envY.assign(identX, 10)
-      envX.read(identX).asInstanceOf[Int] ==> 10
-      envY.read(identX).asInstanceOf[Int] ==> 10
+      envY.assign(x, 10)
+      envX.read(x).asInstanceOf[Int] ==> 10
+      envY.read(x).asInstanceOf[Int] ==> 10
       
-      val envShadowed = envX.bind(identX, 0)
-      envX.assign(identX, 5)
-      assert(envShadowed.read(identX) != envX.read(identX))
+      val envShadowed = envX.bind(x, 0)
+      envX.assign(x, 5)
+      assert(envShadowed.read(x) != envX.read(x))
     }
 
     test("missing binding") {
       val env = Env.empty
-      val ident = LocalIdent(LocalName("x"))
-      val e = intercept[NoSuchElementException] {
+      val ident = LocalName("x")
+      val e = intercept[java.lang.AssertionError] {
         env.read(ident)
       }
-      e.getMessage() ==> "No variable LocalIdent(LocalName<x>) in Env"
+      e.getMessage() ==> "No variable LocalName<x> in Env"
     }
 
     test("this binding") {
@@ -48,7 +48,7 @@ object EnvTests extends TestSuite{
 
     test("missing this binding") {
       val env = Env.empty
-      val e = intercept[NoSuchElementException] {
+      val e = intercept[java.lang.AssertionError] {
         env.getThis
       }
       e.getMessage() ==> "No THIS in current Env"

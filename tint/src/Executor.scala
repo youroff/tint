@@ -9,13 +9,10 @@ import org.scalajs.linker.standard.LinkedClass
 import org.scalajs.ir.Position.NoPosition
 import scala.scalajs.LinkingInfo
 import org.scalajs.ir.ScalaJSVersions
+import utils.Utils.OptionsOps
 
 class Executor(classes: Map[ClassName, LinkedClass]) {
   val modules: mutable.Map[ClassName, Instance] = mutable.Map()
-  val linkingInfo = js.Dictionary(
-    // TODO: Add other flags when required
-    "linkerVersion" -> ScalaJSVersions.current
-  )
   implicit val pos = NoPosition
 
   def execute(program: Tree): Unit = {
@@ -25,6 +22,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
   def eval(program: Tree)(implicit env: Env): js.Any = {
     println("EVAL======")
     println(program)
+    println("Env: " + env)
     val result: js.Any = program match {
       case Block(trees) => evalBlock(trees)
       case Skip() => ()
@@ -37,18 +35,18 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case JSGlobalRef(name) =>
         lookupGlobalVar(name)
       case StringLiteral(value) => value
-      case CharLiteral(value) => value
-      case IntLiteral(value) => value
-      case LongLiteral(value) => value
-      case DoubleLiteral(value) => value
-      case BooleanLiteral(value) => value
+      case CharLiteral(value) => new CharInstance(value)
+      case IntLiteral(value) => value.intValue()
+      case LongLiteral(value) => new LongInstance(value)
+      case DoubleLiteral(value) => value.doubleValue()
+      case BooleanLiteral(value) => value.booleanValue()
       case Null() => null
       case Undefined() => js.undefined
-      case ArrayValue(_, value) => value
+      case ArrayValue(typeRef, value) => ArrayInstance.fromList(typeRef, value map eval)
       case This() => env.getThis
-      case VarRef(name) => env.read(name)
+      case VarRef(LocalIdent(name)) => env.read(name)
 
-      case JSLinkingInfo() => linkingInfo
+      case JSLinkingInfo() => scala.scalajs.runtime.linkingInfo
 
       case Select(tree, _, field) => eval(tree) match {
         case instance: Instance =>
@@ -56,13 +54,20 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         case rest => unimplemented(rest, "Select")
       }
 
+      case ArraySelect(array, index) =>
+          val instance = eval(array).asInstanceOf[ArrayInstance]
+          val i = eval(index).asInstanceOf[Int]
+          instance(i)
+
       case JSSelect(receiver, prop) =>
         val obj = eval(receiver).asInstanceOf[RawJSValue]
         val idx = eval(prop)
         obj.jsPropertyGet(idx)
 
-      case Apply(flags, receiver, method, args) => eval(receiver) match {
+      case Apply(_flags, receiver, method, args) => eval(receiver) match {
         case instance: Instance => {
+          // class -> super class -> Object -(back)-> interfaces
+          // 
           val methodDef = lookupMethodDef(instance.className, method)
           eval(methodDef.body.get)(bindArgs(methodDef.args, args).setThis(instance))
         }
@@ -97,25 +102,29 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         instance
       })
 
-      case StoreModule(name, tree) => eval(tree) match {
-        case mod: Instance => modules.update(name, mod)
-        case rest => unimplemented(rest, "StoreModule")
-      }
+      case StoreModule(name, tree) =>
+        modules.update(name, eval(tree).asInstanceOf[Instance])
 
       case Assign(lhs, rhs) => lhs match {
-        case VarRef(name) => {
+        case VarRef(LocalIdent(name)) =>
           env.assign(name, eval(rhs))
-          ()
-        }
+
+        case ArraySelect(array, index) =>
+          val instance = eval(array).asInstanceOf[ArrayInstance]
+          val i = eval(index).asInstanceOf[Int]
+          instance(i) = eval(rhs)
+
         case Select(qualifier, _, field) => eval(qualifier) match {
           case instance: Instance =>
             instance.setField(field, eval(rhs))
           case rest => unimplemented(rest, "Assign -> Select")
         }
-        case JSSelect(VarRef(name), prop) => {
+
+        case JSSelect(VarRef(LocalIdent(name)), prop) => {
           val obj = env.read(name).asInstanceOf[RawJSValue]
           obj.jsPropertySet(eval(prop), eval(rhs))
         }
+
         case rest => unimplemented(rest, "Assign")
       }
 
@@ -128,17 +137,24 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case While(cond, body) => 
         while (eval(cond).asInstanceOf[Boolean]) eval(body)
 
-      // TODO: Implement object construction
-      case JSObjectConstr(List()) =>
-        // println(fields)
-        new js.Object()
+      case JSObjectConstr(props) =>
+        val inits = props.map {
+          case (k, v) => (eval(k), eval(v))
+        }
+        js.special.objectLiteral(inits: _*)
+ 
+      case NewArray(typeRef, lengths) =>
+        // Type zeroOf ... for initialize
+        new ArrayInstance(typeRef, (lengths map eval).asInstanceOf[List[Int]])
 
       case AsInstanceOf(tree, tpe) => cast(eval(tree), tpe)
 
-      case BinaryOp(BinaryOp.===, l, r) => eval(l) == eval(r)
-      case BinaryOp(BinaryOp.!==, l, r) => eval(l) != eval(r)
-      case BinaryOp(BinaryOp.String_+, l, r) => //3
-        eval(l).asInstanceOf[String] + eval(r).asInstanceOf[String]
+      case BinaryOp(BinaryOp.===, l, r) => // 1
+        js.special.strictEquals(eval(l), eval(r))
+      case BinaryOp(BinaryOp.!==, l, r) => // 2
+        !js.special.strictEquals(eval(l), eval(r))
+      case BinaryOp(BinaryOp.String_+, l, r) => // 3
+        "" + eval(l) + eval(r)
       case BinaryOp(BinaryOp.Boolean_==, l, r) => // 4
         eval(l).asInstanceOf[Boolean] == eval(r).asInstanceOf[Boolean]
       case BinaryOp(BinaryOp.Boolean_!=, l, r) => // 5
@@ -181,54 +197,64 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
 
       case UnaryOp(UnaryOp.Boolean_!, t) => !eval(t).asInstanceOf[Boolean] // 1
 
-      // TODO: asInstanceOf[Char].toInt isn't working
-      case UnaryOp(UnaryOp.CharToInt, t) => eval(t).asInstanceOf[Int]//.toInt // 2
+      case UnaryOp(UnaryOp.CharToInt, t) => eval(t).asInstanceOf[CharInstance].value.toInt // 2
       case UnaryOp(UnaryOp.ByteToInt, t) => eval(t).asInstanceOf[Byte].toInt // 3
       case UnaryOp(UnaryOp.ShortToInt, t) => eval(t).asInstanceOf[Short].toInt // 4
-      case UnaryOp(UnaryOp.IntToLong, t) => eval(t).asInstanceOf[Int].toLong // 5
+      case UnaryOp(UnaryOp.IntToLong, t) => new LongInstance(eval(t).asInstanceOf[Int].toLong) // 5
       case UnaryOp(UnaryOp.IntToDouble, t) => eval(t).asInstanceOf[Int].toDouble // 6
       case UnaryOp(UnaryOp.FloatToDouble, t) => eval(t).asInstanceOf[Float].toDouble // 7
-      case UnaryOp(UnaryOp.IntToChar, t) => eval(t).asInstanceOf[Int].toChar // 8
+      case UnaryOp(UnaryOp.IntToChar, t) => new CharInstance(eval(t).asInstanceOf[Int].toChar) // 8
 
-      // TODO: asInstanceOf[Long] is failing with undefined behavior: not an instance of Long
-      case UnaryOp(UnaryOp.LongToDouble, t) => eval(t).asInstanceOf[Int].toDouble // 14
+      case UnaryOp(UnaryOp.LongToDouble, t) => eval(t).asInstanceOf[LongInstance].value.toDouble // 14
       
+      // TODO: This probably should be handled differently
+      case JSBinaryOp(JSBinaryOp.|, l, r) => // 8
+        eval(l).asInstanceOf[js.Dynamic] | eval(r).asInstanceOf[js.Dynamic]
+
       case rest =>
         unimplemented(rest, "root")
     }
+    println(s"Result: $result")
     println("----------")
     result
   }
 
   def bindArgs(args: List[ParamDef], values: List[Tree])(implicit env: Env): Env = {
     args.zip(values map eval).foldLeft(env) {
-      case (env, (paramDef, arg)) => env.bind(paramDef.name, arg) 
+      case (env, (paramDef, arg)) => env.bind(paramDef.name.name, arg) 
     }
   }
 
-  def evalBlock(stmts: List[Tree])(implicit env: Env): js.Any = stmts match {
-    case VarDef(name, _, _, _, e) :: rest => 
-      evalBlock(rest)(env.bind(name, eval(e)))
-    case e :: Nil =>
-      eval(e)
-    case e :: rest =>
-      eval(e)
-      evalBlock(rest)
-    case Nil => ()
+  def evalBlock(stmts: List[Tree])(implicit env: Env): js.Any = {
+    // env.exposeThis
+    stmts match {
+      case VarDef(LocalIdent(name), _, _, _, e) :: rest => 
+        val result = eval(e)
+        evalBlock(rest)(env.bind(name, result))
+      case e :: Nil =>
+        eval(e)
+      case e :: rest =>
+        eval(e)
+        evalBlock(rest)
+      case Nil => ()
+    }
   }
 
   def lookupClassDef(name: ClassName): LinkedClass = {
-    classes.get(name).get
+    classes.get(name).getOrThrow(s"No class $name in class cache")
   }
 
   def lookupMethodDef(name: ClassName, method: MethodIdent): MethodDef = {
-    lookupClassDef(name).methods.find(_.value.name == method).get.value
+    lookupClassDef(name).methods.find(_.value.name == method)
+      .getOrThrow(s"No $method in class $name").value
   }
 
   def lookupInitializer(name: ClassName): MethodDef = {
     // There can be many initializers with different signatures,
     // some more elaborate logic to pick the right one?
-    lookupClassDef(name).methods.find(_.value.methodName.simpleName == ConstructorSimpleName).get.value
+    lookupClassDef(name).methods
+      .find(_.value.methodName.simpleName == ConstructorSimpleName)
+      .getOrThrow(s"Constructor for $name not found").value
   }
 
   def lookupGlobalVar(name: String): js.Any = {
@@ -239,7 +265,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     case ClassType(BoxedStringClass) => value.asInstanceOf[String]
     case BooleanType => value.asInstanceOf[Boolean]
     case IntType => value.asInstanceOf[Int]
-    case rest => unimplemented(tpe, "CAST")(Env.empty)
+    case _ => value
   } 
 
   def unimplemented(t: Any, site: String = "default")(implicit env: Env) = {
