@@ -154,6 +154,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         !js.special.strictEquals(eval(l), eval(r))
       case BinaryOp(BinaryOp.String_+, l, r) => // 3
         "" + eval(l) + eval(r)
+
       case BinaryOp(BinaryOp.Boolean_==, l, r) => // 4
         eval(l).asInstanceOf[Boolean] == eval(r).asInstanceOf[Boolean]
       case BinaryOp(BinaryOp.Boolean_!=, l, r) => // 5
@@ -167,7 +168,24 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         eval(l).asInstanceOf[Int] + eval(r).asInstanceOf[Int]
       case BinaryOp(BinaryOp.Int_-, l, r) => // 9
         eval(l).asInstanceOf[Int] - eval(r).asInstanceOf[Int]
-      
+      case BinaryOp(BinaryOp.Int_*, l, r) => // 10
+        eval(l).asInstanceOf[Int] * eval(r).asInstanceOf[Int]
+      case BinaryOp(BinaryOp.Int_/, l, r) => // 11
+        eval(l).asInstanceOf[Int] / eval(r).asInstanceOf[Int]
+      case BinaryOp(BinaryOp.Int_%, l, r) => // 12
+        eval(l).asInstanceOf[Int] % eval(r).asInstanceOf[Int]
+      case BinaryOp(BinaryOp.Int_|, l, r) => // 13
+        eval(l).asInstanceOf[Int] | eval(r).asInstanceOf[Int]
+      case BinaryOp(BinaryOp.Int_&, l, r) => // 14
+        eval(l).asInstanceOf[Int] & eval(r).asInstanceOf[Int]
+      case BinaryOp(BinaryOp.Int_^, l, r) => // 15
+        eval(l).asInstanceOf[Int] ^ eval(r).asInstanceOf[Int]
+      case BinaryOp(BinaryOp.Int_<<, l, r) => // 16
+        eval(l).asInstanceOf[Int] << eval(r).asInstanceOf[Int]
+      case BinaryOp(BinaryOp.Int_>>>, l, r) => // 17
+        eval(l).asInstanceOf[Int] >>> eval(r).asInstanceOf[Int]
+      case BinaryOp(BinaryOp.Int_>>, l, r) => // 18
+        eval(l).asInstanceOf[Int] >> eval(r).asInstanceOf[Int]
       case BinaryOp(BinaryOp.Int_==, l, r) => // 19
         eval(l).asInstanceOf[Int] == eval(r).asInstanceOf[Int]
       case BinaryOp(BinaryOp.Int_!=, l, r) => // 20
@@ -181,34 +199,160 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case BinaryOp(BinaryOp.Int_>=, l, r) => // 24
         eval(l).asInstanceOf[Int] >= eval(r).asInstanceOf[Int]
 
+      case BinaryOp(BinaryOp.Long_+, l, r) => // 25
+        eval(l).asInstanceOf[LongInstance] >= eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_-, l, r) => // 26
+        eval(l).asInstanceOf[LongInstance] - eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_*, l, r) => // 27
+        eval(l).asInstanceOf[LongInstance] * eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_/, l, r) => // 28
+        eval(l).asInstanceOf[LongInstance] / eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_%, l, r) => // 29
+        eval(l).asInstanceOf[LongInstance] % eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_|, l, r) => // 30
+        eval(l).asInstanceOf[LongInstance] | eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_&, l, r) => // 31
+        eval(l).asInstanceOf[LongInstance] & eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_^, l, r) => // 32
+        eval(l).asInstanceOf[LongInstance] ^ eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_<<, l, r) => // 33
+        eval(l).asInstanceOf[LongInstance] << eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_>>>, l, r) => // 34
+        eval(l).asInstanceOf[LongInstance] >>> eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_>>, l, r) => // 35
+        eval(l).asInstanceOf[LongInstance] >> eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_==, l, r) => // 36
+        eval(l).asInstanceOf[LongInstance] == eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_!=, l, r) => // 37
+        eval(l).asInstanceOf[LongInstance] != eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_<, l, r) => // 38
+        eval(l).asInstanceOf[LongInstance] < eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_<=, l, r) => // 39
+        eval(l).asInstanceOf[LongInstance] <= eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_>, l, r) => // 40
+        eval(l).asInstanceOf[LongInstance] > eval(r).asInstanceOf[LongInstance]
+      case BinaryOp(BinaryOp.Long_>=, l, r) => // 41
+        eval(l).asInstanceOf[LongInstance] >= eval(r).asInstanceOf[LongInstance]
+
+      case BinaryOp(BinaryOp.Float_+, l, r) => // 42
+        eval(l).asInstanceOf[Float] + eval(r).asInstanceOf[Float]
+      case BinaryOp(BinaryOp.Float_-, l, r) => // 43
+        eval(l).asInstanceOf[Float] - eval(r).asInstanceOf[Float]
+      case BinaryOp(BinaryOp.Float_*, l, r) => // 44
+        eval(l).asInstanceOf[Float] * eval(r).asInstanceOf[Float]
+      case BinaryOp(BinaryOp.Float_/, l, r) => // 45
+        eval(l).asInstanceOf[Float] / eval(r).asInstanceOf[Float]
+      case BinaryOp(BinaryOp.Float_%, l, r) => // 46
+        eval(l).asInstanceOf[Float] % eval(r).asInstanceOf[Float]
+
       case BinaryOp(BinaryOp.Double_+, l, r) => // 47
         eval(l).asInstanceOf[Double] + eval(r).asInstanceOf[Double]
       case BinaryOp(BinaryOp.Double_-, l, r) => // 48
         eval(l).asInstanceOf[Double] - eval(r).asInstanceOf[Double]
       case BinaryOp(BinaryOp.Double_*, l, r) => // 49
         eval(l).asInstanceOf[Double] * eval(r).asInstanceOf[Double]
-
-
+      case BinaryOp(BinaryOp.Double_/, l, r) => // 50
+        eval(l).asInstanceOf[Double] / eval(r).asInstanceOf[Double]
+      case BinaryOp(BinaryOp.Double_%, l, r) => // 51
+        eval(l).asInstanceOf[Double] % eval(r).asInstanceOf[Double]
+      case BinaryOp(BinaryOp.Double_==, l, r) => // 52
+        eval(l).asInstanceOf[Double] == eval(r).asInstanceOf[Double]
+      case BinaryOp(BinaryOp.Double_!=, l, r) => // 53
+        eval(l).asInstanceOf[Double] != eval(r).asInstanceOf[Double]
+      case BinaryOp(BinaryOp.Double_<, l, r) => // 54
+        eval(l).asInstanceOf[Double] < eval(r).asInstanceOf[Double]
+      case BinaryOp(BinaryOp.Double_<=, l, r) => // 55
+        eval(l).asInstanceOf[Double] <= eval(r).asInstanceOf[Double]
       case BinaryOp(BinaryOp.Double_>, l, r) => // 56
         eval(l).asInstanceOf[Double] > eval(r).asInstanceOf[Double]
       case BinaryOp(BinaryOp.Double_>=, l, r) => // 57
         eval(l).asInstanceOf[Double] >= eval(r).asInstanceOf[Double]
 
-      case UnaryOp(UnaryOp.Boolean_!, t) => !eval(t).asInstanceOf[Boolean] // 1
+      case UnaryOp(UnaryOp.Boolean_!, t) => // 1
+        !eval(t).asInstanceOf[Boolean]
+      case UnaryOp(UnaryOp.CharToInt, t) => // 2
+        eval(t).asInstanceOf[CharInstance].value.toInt
+      case UnaryOp(UnaryOp.ByteToInt, t) => // 3
+        eval(t).asInstanceOf[Byte].toInt
+      case UnaryOp(UnaryOp.ShortToInt, t) => // 4
+        eval(t).asInstanceOf[Short].toInt
+      case UnaryOp(UnaryOp.IntToLong, t) => // 5
+        new LongInstance(eval(t).asInstanceOf[Int].toLong)
+      case UnaryOp(UnaryOp.IntToDouble, t) => // 6
+        eval(t).asInstanceOf[Int].toDouble
+      case UnaryOp(UnaryOp.FloatToDouble, t) => // 7
+        eval(t).asInstanceOf[Float].toDouble
+      case UnaryOp(UnaryOp.IntToChar, t) => // 8
+        new CharInstance(eval(t).asInstanceOf[Int].toChar)
+      case UnaryOp(UnaryOp.IntToByte, t) => // 9
+        eval(t).asInstanceOf[Int].toByte
+      case UnaryOp(UnaryOp.IntToShort, t) => // 10
+        eval(t).asInstanceOf[Int].toShort
+      case UnaryOp(UnaryOp.LongToInt, t) => // 11
+        eval(t).asInstanceOf[LongInstance].value.toInt
+      case UnaryOp(UnaryOp.DoubleToInt, t) => // 12
+        eval(t).asInstanceOf[Double].toInt
+      case UnaryOp(UnaryOp.DoubleToFloat, t) => // 13
+        eval(t).asInstanceOf[Double].toFloat
+      case UnaryOp(UnaryOp.LongToDouble, t) => // 14
+        eval(t).asInstanceOf[LongInstance].value.toDouble
+      case UnaryOp(UnaryOp.DoubleToLong, t) => // 15
+        new LongInstance(eval(t).asInstanceOf[Double].toLong)
 
-      case UnaryOp(UnaryOp.CharToInt, t) => eval(t).asInstanceOf[CharInstance].value.toInt // 2
-      case UnaryOp(UnaryOp.ByteToInt, t) => eval(t).asInstanceOf[Byte].toInt // 3
-      case UnaryOp(UnaryOp.ShortToInt, t) => eval(t).asInstanceOf[Short].toInt // 4
-      case UnaryOp(UnaryOp.IntToLong, t) => new LongInstance(eval(t).asInstanceOf[Int].toLong) // 5
-      case UnaryOp(UnaryOp.IntToDouble, t) => eval(t).asInstanceOf[Int].toDouble // 6
-      case UnaryOp(UnaryOp.FloatToDouble, t) => eval(t).asInstanceOf[Float].toDouble // 7
-      case UnaryOp(UnaryOp.IntToChar, t) => new CharInstance(eval(t).asInstanceOf[Int].toChar) // 8
-
-      case UnaryOp(UnaryOp.LongToDouble, t) => eval(t).asInstanceOf[LongInstance].value.toDouble // 14
-      
-      // TODO: This probably should be handled differently
+      case JSBinaryOp(JSBinaryOp.===, l, r) => // 1
+        js.special.strictEquals(eval(l), eval(r))
+      case JSBinaryOp(JSBinaryOp.!==, l, r) => // 2
+        !js.special.strictEquals(eval(l), eval(r))
+      case JSBinaryOp(JSBinaryOp.+, l, r) => // 3
+        eval(l).asInstanceOf[js.Dynamic] + eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.-, l, r) => // 4
+        eval(l).asInstanceOf[js.Dynamic] - eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.*, l, r) => // 5
+        eval(l).asInstanceOf[js.Dynamic] * eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp./, l, r) => // 6
+        eval(l).asInstanceOf[js.Dynamic] / eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.%, l, r) => // 7
+        eval(l).asInstanceOf[js.Dynamic] % eval(r).asInstanceOf[js.Dynamic]
       case JSBinaryOp(JSBinaryOp.|, l, r) => // 8
         eval(l).asInstanceOf[js.Dynamic] | eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.&, l, r) => // 9
+        eval(l).asInstanceOf[js.Dynamic] & eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.^, l, r) => // 10
+        eval(l).asInstanceOf[js.Dynamic] ^ eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.<<, l, r) => // 11
+        eval(l).asInstanceOf[js.Dynamic] << eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.>>, l, r) => // 12
+        eval(l).asInstanceOf[js.Dynamic] >> eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.>>>, l, r) => // 13
+        eval(l).asInstanceOf[js.Dynamic] >>> eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.<, l, r) => // 14
+        eval(l).asInstanceOf[js.Dynamic] < eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.<=, l, r) => // 15
+        eval(l).asInstanceOf[js.Dynamic] <= eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.>, l, r) => // 16
+        eval(l).asInstanceOf[js.Dynamic] > eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.>=, l, r) => // 17
+        eval(l).asInstanceOf[js.Dynamic] >= eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.&&, l, r) => // 18
+        eval(l).asInstanceOf[js.Dynamic] && eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.||, l, r) => // 19
+        eval(l).asInstanceOf[js.Dynamic] || eval(r).asInstanceOf[js.Dynamic]
+      case JSBinaryOp(JSBinaryOp.in, l, r) => // 20
+        js.special.in(eval(l), eval(r))
+      case JSBinaryOp(JSBinaryOp.instanceof, l, r) => // 21
+        js.special.instanceof(eval(l), eval(r))
+
+      case JSUnaryOp(JSUnaryOp.+, t) => // 1
+        eval(t).asInstanceOf[js.Dynamic].unary_+
+      case JSUnaryOp(JSUnaryOp.-, t) => // 2
+        eval(t).asInstanceOf[js.Dynamic].unary_-
+      case JSUnaryOp(JSUnaryOp.~, t) => // 3
+        eval(t).asInstanceOf[js.Dynamic].unary_~
+      case JSUnaryOp(JSUnaryOp.!, t) => // 4
+        eval(t).asInstanceOf[js.Dynamic].unary_!
+      case JSUnaryOp(JSUnaryOp.typeof, t) => // 5
+        js.typeOf(eval(t))
+
 
       case rest =>
         unimplemented(rest, "root")
