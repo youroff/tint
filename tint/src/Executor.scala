@@ -144,7 +144,6 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         js.special.objectLiteral(inits: _*)
  
       case NewArray(typeRef, lengths) =>
-        // Type zeroOf ... for initialize
         new ArrayInstance(typeRef, (lengths map eval).asInstanceOf[List[Int]])
 
       case AsInstanceOf(tree, tpe) => cast(eval(tree), tpe)
