@@ -34,7 +34,7 @@ object ArrayInstanceTests extends TestSuite{
 
     test("incorrect params") {
       val e = intercept[IllegalArgumentException] {
-        new ArrayInstance(ArrayTypeRef(IntRef, 2), List(2))
+        new ArrayInstance(ArrayTypeRef(IntRef, 1), List(2, 3))
       }
       e.getMessage() ==> "requirement failed: dimensions don't match"
     }

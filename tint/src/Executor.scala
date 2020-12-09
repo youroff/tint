@@ -48,9 +48,9 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
 
       case JSLinkingInfo() => scala.scalajs.runtime.linkingInfo
 
-      case Select(tree, _, field) => eval(tree) match {
+      case Select(tree, className, field) => eval(tree) match {
         case instance: Instance =>
-          instance.getField(field)
+          instance.getField((className, field.name))
         case rest => unimplemented(rest, "Select")
       }
 
@@ -68,12 +68,12 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         case instance: Instance => {
           // class -> super class -> Object -(back)-> interfaces
           // 
-          val methodDef = lookupMethodDef(instance.className, method)
+          val methodDef = lookupMethodDef(instance.className, method.name)
           eval(methodDef.body.get)(bindArgs(methodDef.args, args).setThis(instance))
         }
         case rest => js.typeOf(rest) match {
           case "string" =>
-            val met = lookupMethodDef(BoxedStringClass, method)
+            val met = lookupMethodDef(BoxedStringClass, method.name)
             eval(met.body.get)(bindArgs(met.args, args).setThis(rest))
           case something => unimplemented(rest, s"Apply as ${something}")
         }
@@ -81,18 +81,18 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
 
       case ApplyStatically(_flags, tree, className, methodIdent, args) => eval(tree) match {
         case instance: Instance =>
-          val methodDef = lookupMethodDef(className, methodIdent)
+          val methodDef = lookupMethodDef(className, methodIdent.name)
           eval(methodDef.body.get)(bindArgs(methodDef.args, args).setThis(instance))
         case rest => unimplemented(rest, "ApplyStatically")
       }
 
       case ApplyStatic(_flags, className, methodIdent, args) =>
-        val methodDef = lookupMethodDef(className, methodIdent)
+        val methodDef = lookupMethodDef(className, methodIdent.name)
         eval(methodDef.body.get)(bindArgs(methodDef.args, args))
       
       case New(name, ctor, args) =>
         val instance = new Instance(name)
-        val ctorDef = lookupMethodDef(name, ctor)
+        val ctorDef = lookupMethodDef(name, ctor.name)
         eval(ctorDef.body.get)(bindArgs(ctorDef.args, args).setThis(instance))
 
       case LoadModule(name) => modules.getOrElse(name, {
@@ -114,9 +114,9 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
           val i = eval(index).asInstanceOf[Int]
           instance(i) = eval(rhs)
 
-        case Select(qualifier, _, field) => eval(qualifier) match {
+        case Select(qualifier, className, field) => eval(qualifier) match {
           case instance: Instance =>
-            instance.setField(field, eval(rhs))
+            instance.setField((className, field.name), eval(rhs))
           case rest => unimplemented(rest, "Assign -> Select")
         }
 
@@ -145,6 +145,8 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
  
       case NewArray(typeRef, lengths) =>
         new ArrayInstance(typeRef, (lengths map eval).asInstanceOf[List[Int]])
+
+      case ArrayLength(array) => eval(array).asInstanceOf[ArrayInstance].length
 
       case AsInstanceOf(tree, tpe) => cast(eval(tree), tpe)
 
@@ -387,16 +389,21 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     classes.get(name).getOrThrow(s"No class $name in class cache")
   }
 
-  def lookupMethodDef(name: ClassName, method: MethodIdent): MethodDef = {
-    lookupClassDef(name).methods.find(_.value.name == method)
-      .getOrThrow(s"No $method in class $name").value
+  def lookupMethodDef(className: ClassName, methodName: MethodName): MethodDef = {
+    def superChain(pivot: Option[ClassName]): Option[MethodDef] = pivot.flatMap { className =>
+      val classDef = lookupClassDef(className)
+      classDef.methods.find(_.value.methodName == methodName)
+        .map(_.value)
+        .orElse(superChain(classDef.superClass.map(_.name)))
+    }
+    superChain(Some(className)).getOrThrow(s"No method $methodName in $className")
   }
 
   def lookupInitializer(name: ClassName): MethodDef = {
     // There can be many initializers with different signatures,
     // some more elaborate logic to pick the right one?
     lookupClassDef(name).methods
-      .find(_.value.methodName.simpleName == ConstructorSimpleName)
+      .find(_.value.methodName == NoArgConstructorName)
       .getOrThrow(s"Constructor for $name not found").value
   }
 
