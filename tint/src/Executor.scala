@@ -10,6 +10,9 @@ import org.scalajs.ir.Position.NoPosition
 import scala.scalajs.LinkingInfo
 import org.scalajs.ir.ScalaJSVersions
 import utils.Utils.OptionsOps
+import Purifier._
+import org.scalajs.ir.ClassKind.NativeJSClass
+import org.scalajs.ir.Trees.JSNativeLoadSpec.Global
 
 class Executor(classes: Map[ClassName, LinkedClass]) {
   val modules: mutable.Map[ClassName, Instance] = mutable.Map()
@@ -20,20 +23,9 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
   }
 
   def eval(program: Tree)(implicit env: Env): js.Any = {
-    println("EVAL======")
-    println(program)
-    println("Env: " + env)
     val result: js.Any = program match {
       case Block(trees) => evalBlock(trees)
       case Skip() => ()
-      case JSMethodApply(receiver, method, args) =>
-        val obj = eval(receiver).asInstanceOf[RawJSValue]
-        val met = eval(method)
-        // TODO: Take care of Spread
-        val eargs = args.asInstanceOf[List[Tree]] map eval
-        obj.jsMethodApply(met)(eargs: _*)
-      case JSGlobalRef(name) =>
-        lookupGlobalVar(name)
       case StringLiteral(value) => value
       case CharLiteral(value) => new CharInstance(value)
       case IntLiteral(value) => value.intValue()
@@ -64,39 +56,43 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         val idx = eval(prop)
         obj.jsPropertyGet(idx)
 
-      case Apply(_flags, receiver, method, args) => eval(receiver) match {
-        case instance: Instance => {
-          // class -> super class -> Object -(back)-> interfaces
-          // 
-          val methodDef = lookupMethodDef(instance.className, method.name)
-          eval(methodDef.body.get)(bindArgs(methodDef.args, args).setThis(instance))
+      case Apply(flags, receiver, method, args) =>
+        val instance = eval(receiver)
+        val className = (instance: Any) match {
+          case instance: Instance => instance.className
+          case _: String => BoxedStringClass
+          case rest =>
+            println(method)
+            unimplemented(rest, s"Apply className resolution")
         }
-        case rest => js.typeOf(rest) match {
-          case "string" =>
-            val met = lookupMethodDef(BoxedStringClass, method.name)
-            eval(met.body.get)(bindArgs(met.args, args).setThis(rest))
-          case something => unimplemented(rest, s"Apply as ${something}")
-        }
-      }
+        val methodDef = lookupMethodDef(className, method.name, MemberNamespace.Public)
+        val eargs = evalArgs(methodDef.args, args)
+        eval(methodDef.body.get)(Env.empty.bind(eargs).setThis(instance))
 
-      case ApplyStatically(_flags, tree, className, methodIdent, args) => eval(tree) match {
+      case ApplyStatically(flags, tree, className, methodIdent, args) => eval(tree) match {
         case instance: Instance =>
-          val methodDef = lookupMethodDef(className, methodIdent.name)
-          eval(methodDef.body.get)(bindArgs(methodDef.args, args).setThis(instance))
+          val nspace = MemberNamespace.forNonStaticCall(flags)
+          val methodDef = lookupMethodDef(className, methodIdent.name, nspace)
+          val eargs = evalArgs(methodDef.args, args)
+          eval(methodDef.body.get)(Env.empty.bind(eargs).setThis(instance))
         case rest => unimplemented(rest, "ApplyStatically")
       }
 
-      case ApplyStatic(_flags, className, methodIdent, args) =>
-        val methodDef = lookupMethodDef(className, methodIdent.name)
-        eval(methodDef.body.get)(bindArgs(methodDef.args, args))
+      case ApplyStatic(flags, className, methodIdent, args) =>
+        val nspace = MemberNamespace.forStaticCall(flags)
+        val methodDef = lookupMethodDef(className, methodIdent.name, nspace)
+        val eargs = evalArgs(methodDef.args, args)
+        eval(methodDef.body.get)(Env.empty.bind(eargs))
       
       case New(name, ctor, args) =>
-        val instance = new Instance(name)
-        val ctorDef = lookupMethodDef(name, ctor.name)
-        eval(ctorDef.body.get)(bindArgs(ctorDef.args, args).setThis(instance))
+        val instance = new Instance(name, this)
+        val ctorDef = lookupMethodDef(name, ctor.name, MemberNamespace.Constructor)
+        val eargs = evalArgs(ctorDef.args, args)
+        eval(ctorDef.body.get)(Env.empty.bind(eargs).setThis(instance))
+        instance
 
-      case LoadModule(name) => modules.getOrElse(name, {
-        val instance = new Instance(name)
+      case LoadModule(name) => modules.getOrElseUpdate(name, {
+        val instance = new Instance(name, this)
         val initializer = lookupInitializer(name)
         eval(initializer.body.get)(env.setThis(instance))
         instance
@@ -128,14 +124,36 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         case rest => unimplemented(rest, "Assign")
       }
 
-      // TODO: Implement TryCatch and Error propagation
-      case TryCatch(block, errVar, _, handler) => eval(block)
+      case TryCatch(block, err, _, handler) => try {
+        eval(block)
+      } catch {
+        case js.JavaScriptException(e) =>
+          eval(handler)(env.bind(err.name, e.asInstanceOf[js.Any]))
+      }
+
+      case TryFinally(block, finalizer) => try {
+        eval(block)          
+      } finally {
+        eval(finalizer)
+      }
 
       case If(cond, thenp, elsep) =>
-        if (eval(cond).asInstanceOf[Boolean]) eval(thenp) else eval(elsep)
+        if (asBoolean(eval(cond))) eval(thenp) else eval(elsep)
 
-      case While(cond, body) => 
-        while (eval(cond).asInstanceOf[Boolean]) eval(body)
+      case While(cond, body) =>
+        while (asBoolean(eval(cond))) eval(body)
+
+      case DoWhile(body, cond) =>
+        do { eval(body) } while (asBoolean(eval(cond)))
+
+      case Closure(arrow, captureParams, params, body, captureValues) =>
+        val captures = evalArgs(captureParams, captureValues)
+        val call: js.Function1[js.Array[js.Any], js.Any] = { args =>
+          val argsMap = params.map(_.name.name).zip(args).toMap
+          eval(body)(Env.empty.bind(captures).bind(argsMap))
+        }
+        new js.Function("body", "return function(...args) { return body(args); };")
+          .asInstanceOf[js.Function1[js.Function, js.Any]].apply(call)
 
       case JSObjectConstr(props) =>
         val inits = props.map {
@@ -143,12 +161,49 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         }
         js.special.objectLiteral(inits: _*)
  
+      case JSDelete(qualifier, item) =>
+        js.special.delete(eval(qualifier), eval(item))
+
+      case JSFunctionApply(fun, args) =>
+        eval(fun).asInstanceOf[js.Function].call(js.undefined, evalSpread(args): _*)
+
+      case JSMethodApply(receiver, method, args) =>
+        val obj = eval(receiver).asInstanceOf[RawJSValue]
+        obj.jsMethodApply(eval(method))(evalSpread(args): _*)
+
+      case JSGlobalRef(name) =>
+        new js.Function(s"return $name;").asInstanceOf[js.Function0[js.Any]]()
+
+      case JSTypeOfGlobalRef(JSGlobalRef(name)) =>
+        new js.Function(s"return typeof $name;").asInstanceOf[js.Function0[String]]()
+
+      case JSNew(ctor, args) =>
+        val eargs = evalSpread(args)
+        js.Dynamic.newInstance(eval(ctor).asInstanceOf[js.Dynamic])(eargs: _*)
+
+      case LoadJSConstructor(className) =>
+        val classDef = lookupClassDef(className)
+        classDef.kind match {
+          case NativeJSClass => classDef.jsNativeLoadSpec.get match {
+            case Global(ref, path) => eval(JSGlobalRef((path :+ ref).mkString(".")))
+            case _ => ???
+          }
+          case _ => ???
+        }
+        // println(classDef.jsNativeLoadSpec)
+        // println(classDef.jsNativeMembers)
+        // ???
+
       case NewArray(typeRef, lengths) =>
         new ArrayInstance(typeRef, (lengths map eval).asInstanceOf[List[Int]])
 
-      case ArrayLength(array) => eval(array).asInstanceOf[ArrayInstance].length
+      case ArrayLength(array) =>
+        eval(array).asInstanceOf[ArrayInstance].length
 
       case AsInstanceOf(tree, tpe) => cast(eval(tree), tpe)
+
+      // TODO: Is this it? https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/label 
+      case Labeled(_, _, body) => eval(body)
 
       case BinaryOp(BinaryOp.===, l, r) => // 1
         js.special.strictEquals(eval(l), eval(r))
@@ -158,48 +213,48 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         "" + eval(l) + eval(r)
 
       case BinaryOp(BinaryOp.Boolean_==, l, r) => // 4
-        eval(l).asInstanceOf[Boolean] == eval(r).asInstanceOf[Boolean]
+        asBoolean(eval(l)) == asBoolean(eval(r))
       case BinaryOp(BinaryOp.Boolean_!=, l, r) => // 5
-        eval(l).asInstanceOf[Boolean] != eval(r).asInstanceOf[Boolean]
+        asBoolean(eval(l)) != asBoolean(eval(r))
       case BinaryOp(BinaryOp.Boolean_|, l, r) => // 6
-        eval(l).asInstanceOf[Boolean] | eval(r).asInstanceOf[Boolean]
+        asBoolean(eval(l)) | asBoolean(eval(r))
       case BinaryOp(BinaryOp.Boolean_&, l, r) => // 7
-        eval(l).asInstanceOf[Boolean] & eval(r).asInstanceOf[Boolean]
+        asBoolean(eval(l)) & asBoolean(eval(r))
 
       case BinaryOp(BinaryOp.Int_+, l, r) => // 8
-        eval(l).asInstanceOf[Int] + eval(r).asInstanceOf[Int]
+        asInt(eval(l)) + asInt(eval(r))
       case BinaryOp(BinaryOp.Int_-, l, r) => // 9
-        eval(l).asInstanceOf[Int] - eval(r).asInstanceOf[Int]
+        asInt(eval(l)) - asInt(eval(r))
       case BinaryOp(BinaryOp.Int_*, l, r) => // 10
-        eval(l).asInstanceOf[Int] * eval(r).asInstanceOf[Int]
+        asInt(eval(l)) * asInt(eval(r))
       case BinaryOp(BinaryOp.Int_/, l, r) => // 11
-        eval(l).asInstanceOf[Int] / eval(r).asInstanceOf[Int]
+        asInt(eval(l)) / asInt(eval(r))
       case BinaryOp(BinaryOp.Int_%, l, r) => // 12
-        eval(l).asInstanceOf[Int] % eval(r).asInstanceOf[Int]
+        asInt(eval(l)) % asInt(eval(r))
       case BinaryOp(BinaryOp.Int_|, l, r) => // 13
-        eval(l).asInstanceOf[Int] | eval(r).asInstanceOf[Int]
+        asInt(eval(l)) | asInt(eval(r))
       case BinaryOp(BinaryOp.Int_&, l, r) => // 14
-        eval(l).asInstanceOf[Int] & eval(r).asInstanceOf[Int]
+        asInt(eval(l)) & asInt(eval(r))
       case BinaryOp(BinaryOp.Int_^, l, r) => // 15
-        eval(l).asInstanceOf[Int] ^ eval(r).asInstanceOf[Int]
+        asInt(eval(l)) ^ asInt(eval(r))
       case BinaryOp(BinaryOp.Int_<<, l, r) => // 16
-        eval(l).asInstanceOf[Int] << eval(r).asInstanceOf[Int]
+        asInt(eval(l)) << asInt(eval(r))
       case BinaryOp(BinaryOp.Int_>>>, l, r) => // 17
-        eval(l).asInstanceOf[Int] >>> eval(r).asInstanceOf[Int]
+        asInt(eval(l)) >>> asInt(eval(r))
       case BinaryOp(BinaryOp.Int_>>, l, r) => // 18
-        eval(l).asInstanceOf[Int] >> eval(r).asInstanceOf[Int]
+        asInt(eval(l)) >> asInt(eval(r))
       case BinaryOp(BinaryOp.Int_==, l, r) => // 19
-        eval(l).asInstanceOf[Int] == eval(r).asInstanceOf[Int]
+        asInt(eval(l)) == asInt(eval(r))
       case BinaryOp(BinaryOp.Int_!=, l, r) => // 20
-        eval(l).asInstanceOf[Int] != eval(r).asInstanceOf[Int]
+        asInt(eval(l)) != asInt(eval(r))
       case BinaryOp(BinaryOp.Int_<, l, r) => // 21
-        eval(l).asInstanceOf[Int] < eval(r).asInstanceOf[Int]
+        asInt(eval(l)) < asInt(eval(r))
       case BinaryOp(BinaryOp.Int_<=, l, r) => // 22
-        eval(l).asInstanceOf[Int] <= eval(r).asInstanceOf[Int]
+        asInt(eval(l)) <= asInt(eval(r))
       case BinaryOp(BinaryOp.Int_>, l, r) => // 23
-        eval(l).asInstanceOf[Int] > eval(r).asInstanceOf[Int]
+        asInt(eval(l)) > asInt(eval(r))
       case BinaryOp(BinaryOp.Int_>=, l, r) => // 24
-        eval(l).asInstanceOf[Int] >= eval(r).asInstanceOf[Int]
+        asInt(eval(l)) >= asInt(eval(r))
 
       case BinaryOp(BinaryOp.Long_+, l, r) => // 25
         eval(l).asInstanceOf[LongInstance] >= eval(r).asInstanceOf[LongInstance]
@@ -237,41 +292,41 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         eval(l).asInstanceOf[LongInstance] >= eval(r).asInstanceOf[LongInstance]
 
       case BinaryOp(BinaryOp.Float_+, l, r) => // 42
-        eval(l).asInstanceOf[Float] + eval(r).asInstanceOf[Float]
+        asFloat(eval(l)) + asFloat(eval(r))
       case BinaryOp(BinaryOp.Float_-, l, r) => // 43
-        eval(l).asInstanceOf[Float] - eval(r).asInstanceOf[Float]
+        asFloat(eval(l)) - asFloat(eval(r))
       case BinaryOp(BinaryOp.Float_*, l, r) => // 44
-        eval(l).asInstanceOf[Float] * eval(r).asInstanceOf[Float]
+        asFloat(eval(l)) * asFloat(eval(r))
       case BinaryOp(BinaryOp.Float_/, l, r) => // 45
-        eval(l).asInstanceOf[Float] / eval(r).asInstanceOf[Float]
+        asFloat(eval(l)) / asFloat(eval(r))
       case BinaryOp(BinaryOp.Float_%, l, r) => // 46
-        eval(l).asInstanceOf[Float] % eval(r).asInstanceOf[Float]
+        asFloat(eval(l)) % asFloat(eval(r))
 
       case BinaryOp(BinaryOp.Double_+, l, r) => // 47
-        eval(l).asInstanceOf[Double] + eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) + asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_-, l, r) => // 48
-        eval(l).asInstanceOf[Double] - eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) - asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_*, l, r) => // 49
-        eval(l).asInstanceOf[Double] * eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) * asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_/, l, r) => // 50
-        eval(l).asInstanceOf[Double] / eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) / asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_%, l, r) => // 51
-        eval(l).asInstanceOf[Double] % eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) % asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_==, l, r) => // 52
-        eval(l).asInstanceOf[Double] == eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) == asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_!=, l, r) => // 53
-        eval(l).asInstanceOf[Double] != eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) != asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_<, l, r) => // 54
-        eval(l).asInstanceOf[Double] < eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) < asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_<=, l, r) => // 55
-        eval(l).asInstanceOf[Double] <= eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) <= asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_>, l, r) => // 56
-        eval(l).asInstanceOf[Double] > eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) > asDouble(eval(r))
       case BinaryOp(BinaryOp.Double_>=, l, r) => // 57
-        eval(l).asInstanceOf[Double] >= eval(r).asInstanceOf[Double]
+        asDouble(eval(l)) >= asDouble(eval(r))
 
       case UnaryOp(UnaryOp.Boolean_!, t) => // 1
-        !eval(t).asInstanceOf[Boolean]
+        !asBoolean(eval(t))
       case UnaryOp(UnaryOp.CharToInt, t) => // 2
         eval(t).asInstanceOf[CharInstance].value.toInt
       case UnaryOp(UnaryOp.ByteToInt, t) => // 3
@@ -279,27 +334,27 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case UnaryOp(UnaryOp.ShortToInt, t) => // 4
         eval(t).asInstanceOf[Short].toInt
       case UnaryOp(UnaryOp.IntToLong, t) => // 5
-        new LongInstance(eval(t).asInstanceOf[Int].toLong)
+        new LongInstance(asInt(eval(t)).toLong)
       case UnaryOp(UnaryOp.IntToDouble, t) => // 6
-        eval(t).asInstanceOf[Int].toDouble
+        asInt(eval(t)).toDouble
       case UnaryOp(UnaryOp.FloatToDouble, t) => // 7
         eval(t).asInstanceOf[Float].toDouble
       case UnaryOp(UnaryOp.IntToChar, t) => // 8
-        new CharInstance(eval(t).asInstanceOf[Int].toChar)
+        new CharInstance(asInt(eval(t)).toChar)
       case UnaryOp(UnaryOp.IntToByte, t) => // 9
-        eval(t).asInstanceOf[Int].toByte
+        asInt(eval(t)).toByte
       case UnaryOp(UnaryOp.IntToShort, t) => // 10
-        eval(t).asInstanceOf[Int].toShort
+        asInt(eval(t)).toShort
       case UnaryOp(UnaryOp.LongToInt, t) => // 11
         eval(t).asInstanceOf[LongInstance].value.toInt
       case UnaryOp(UnaryOp.DoubleToInt, t) => // 12
-        eval(t).asInstanceOf[Double].toInt
+        asDouble(eval(t)).toInt
       case UnaryOp(UnaryOp.DoubleToFloat, t) => // 13
-        eval(t).asInstanceOf[Double].toFloat
+        asDouble(eval(t)).toFloat
       case UnaryOp(UnaryOp.LongToDouble, t) => // 14
         eval(t).asInstanceOf[LongInstance].value.toDouble
       case UnaryOp(UnaryOp.DoubleToLong, t) => // 15
-        new LongInstance(eval(t).asInstanceOf[Double].toLong)
+        new LongInstance(asDouble(eval(t)).toLong)
 
       case JSBinaryOp(JSBinaryOp.===, l, r) => // 1
         js.special.strictEquals(eval(l), eval(r))
@@ -359,19 +414,24 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case rest =>
         unimplemented(rest, "root")
     }
-    println(s"Result: $result")
-    println("----------")
+    // println("EVAL======")
+    // println(program)
+    // println("Env: " + env)
+    // println(s"Result: $result")
+    // println("----------")
     result
   }
 
-  def bindArgs(args: List[ParamDef], values: List[Tree])(implicit env: Env): Env = {
-    args.zip(values map eval).foldLeft(env) {
-      case (env, (paramDef, arg)) => env.bind(paramDef.name.name, arg) 
-    }
+  def evalArgs(args: List[ParamDef], values: List[Tree])(implicit env: Env): Map[LocalName, js.Any] = {
+    args.map(_.name.name).zip(values map eval).toMap
+  }
+
+  def evalSpread(args: List[TreeOrJSSpread])(implicit env: Env): List[js.Any] = args flatMap {
+    case t: Tree => List(eval(t))
+    case JSSpread(items) => eval(items).asInstanceOf[js.Array[js.Any]].toList
   }
 
   def evalBlock(stmts: List[Tree])(implicit env: Env): js.Any = {
-    // env.exposeThis
     stmts match {
       case VarDef(LocalIdent(name), _, _, _, e) :: rest => 
         val result = eval(e)
@@ -385,30 +445,44 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     }
   }
 
+  def evalJsMethodBody(params: List[ParamDef], body: Tree)(implicit env: Env): js.Any = {
+    val call: js.Function1[js.Array[js.Any], js.Any] = { args =>
+      val argsMap = params.map(_.name.name).zip(args).toMap
+      eval(body)(env.bind(argsMap))
+    }
+    new js.Function("body", "return function(...args) { return body(args); };")
+      .asInstanceOf[js.Function1[js.Function, js.Any]].apply(call)
+  }
+
   def lookupClassDef(name: ClassName): LinkedClass = {
     classes.get(name).getOrThrow(s"No class $name in class cache")
   }
 
-  def lookupMethodDef(className: ClassName, methodName: MethodName): MethodDef = {
+  def lookupMethodDef(className: ClassName, methodName: MethodName, nspace: MemberNamespace): MethodDef = {
     def superChain(pivot: Option[ClassName]): Option[MethodDef] = pivot.flatMap { className =>
       val classDef = lookupClassDef(className)
       classDef.methods.find(_.value.methodName == methodName)
         .map(_.value)
         .orElse(superChain(classDef.superClass.map(_.name)))
     }
-    superChain(Some(className)).getOrThrow(s"No method $methodName in $className")
+
+    // def interfaceChain(pivot: Option[ClassName]): Option[MethodDef] = pivot.flatMap { className =>
+    //   val classDef = lookupClassDef(className)
+    //   classDef.interfaces
+    //   classDef.methods.find(_.value.methodName == methodName)
+    //     .map(_.value)
+    //     .orElse(superChain(classDef.superClass.map(_.name)))
+    // }
+
+    superChain(Some(className))
+      // .orElse()
+      .getOrThrow(s"No method $methodName in $className")
   }
 
   def lookupInitializer(name: ClassName): MethodDef = {
-    // There can be many initializers with different signatures,
-    // some more elaborate logic to pick the right one?
     lookupClassDef(name).methods
       .find(_.value.methodName == NoArgConstructorName)
       .getOrThrow(s"Constructor for $name not found").value
-  }
-
-  def lookupGlobalVar(name: String): js.Any = {
-    new js.Function(s"return $name;").asInstanceOf[js.Function0[js.Any]]()
   }
 
   def cast(value: js.Any, tpe: Type)(implicit env: Env): js.Any = tpe match {

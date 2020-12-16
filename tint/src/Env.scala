@@ -15,23 +15,17 @@ class EnvVar(var value: js.Any) {
 
 class Env(table: Map[LocalName, EnvVar], ths: Option[js.Any]) {
 
-  def exposeThis = ths match {
-    case Some(t) => println("This: " + t)
-    case None => println("No This")
-  }
-
   /** Augments the environment with a variable binding: returns new Env */
   def bind(name: LocalName, value: js.Any) = {
-    // if (value.toString() == "[object Object]")
-    //   println(s"binding $name with {${js.Object.entries(value.asInstanceOf[js.Object])}}")
-    // else
-    //   println(s"binding $name with $value")
     new Env(table + (name -> new EnvVar(value)), ths)
+  }
+
+  def bind(bindings: Map[LocalName, js.Any]) = {
+    new Env(table ++ bindings.mapValues(new EnvVar(_)), ths)
   }
 
   /** Updates variable value */
   def assign(name: LocalName, value: js.Any) {
-    // println(s"assigning $name with $value")
     lookup(name).update(value)
   }
 
@@ -53,5 +47,5 @@ class Env(table: Map[LocalName, EnvVar], ths: Option[js.Any]) {
 }
 
 object Env {
-  def empty = new Env(Map(), None)  
+  def empty = new Env(Map(), None)
 }
