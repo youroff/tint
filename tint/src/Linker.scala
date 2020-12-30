@@ -1,57 +1,37 @@
 package tint
 
-import org.scalajs.linker._
-import scala.concurrent.ExecutionContext.Implicits.global
-import org.scalajs.linker.frontend.IRLoader
-import org.scalajs.linker.standard._
-import org.scalajs.linker.interface._
 import scala.concurrent._
+import scala.concurrent.ExecutionContext.Implicits.global
 import org.scalajs.logging._
-import org.scalajs.ir.Trees._
+import org.scalajs.linker._
+import org.scalajs.linker.interface._
+import org.scalajs.linker.standard._
 
 object Linker {
-  private final class StoreLinkingUnitLinkerBackend(originalBackend: LinkerBackend) extends LinkerBackend {
 
-    @volatile
-    private var _linkingUnit: LinkingUnit = _
-
-    val coreSpec: CoreSpec = originalBackend.coreSpec
-
-    val symbolRequirements: SymbolRequirement = originalBackend.symbolRequirements
-
-    override def injectedIRFiles: Seq[IRFile] = originalBackend.injectedIRFiles
-
-    def emit(unit: LinkingUnit, output: LinkerOutput, logger: Logger)(
-        implicit ec: ExecutionContext): Future[Unit] = {
-      _linkingUnit = unit
-      Future.successful(())
-    }
-
-    def linkingUnit: LinkingUnit = {
-      if (_linkingUnit == null)
-        throw new IllegalStateException("Cannot access linkingUnit before emit is called")
-      _linkingUnit
-    }
-  }
-
-  def link(classPath: Seq[String], mainClass: String)(runner: LinkingUnit => Unit): Unit = {
-    val stdPath = "std/scalajs-library_2.13-1.2.0.jar"
+  def link(classPath: Seq[String], mainClass: String): Future[ModuleSet] = {
+    val stdPath = "std/scalajs-library_2.13-1.3.1.jar"
     val mainName = "main"
+ 
     val cache = StandardImpl.irFileCache().newCache
 
-    val config = StandardConfig().withOptimizer(false)
-    val frontend = StandardLinkerFrontend(config)
-    val backend = new StoreLinkingUnitLinkerBackend(StandardLinkerBackend(config))
-    val linker = StandardLinkerImpl(frontend, backend)
-    val output = LinkerOutput(MemOutputFile())
-    val initializer = ModuleInitializer.mainMethodWithArgs(mainClass, mainName)
+    val config = StandardConfig()
+      .withOptimizer(false)
+      .withCheckIR(false)
+      .withBatchMode(false)
 
-    NodeIRContainer.fromClasspath(stdPath +: classPath).flatMap {
-      case (irContainers, _) => cache.cached(irContainers)
-    }.flatMap { irFiles =>
-      linker.link(irFiles, Seq(initializer), output, new ScalaConsoleLogger(Level.Error))
-    }.foreach { _ =>
-      runner(backend.linkingUnit)
-    }
+    val frontend = StandardLinkerFrontend(config)
+    val backend = StandardLinkerBackend(config)
+    val symReqs = backend.symbolRequirements
+    val initializers = Seq(
+      ModuleInitializer.mainMethodWithArgs(mainClass, mainName)
+    )
+
+    NodeIRContainer.fromClasspath(stdPath +: classPath)
+      .map(_._1)
+      .flatMap(cache.cached _)
+      .flatMap { irFiles =>
+        frontend.link(irFiles ++ backend.injectedIRFiles, initializers, symReqs, new ScalaConsoleLogger)
+      }
   }
 }

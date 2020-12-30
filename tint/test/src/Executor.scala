@@ -30,7 +30,11 @@ object ExecutorTests extends TestSuite{
 
     test("If then else basic operation") {
       val exp = If(
-        BinaryOp(BinaryOp.===, VarRef(LocalIdent(x))(IntType), IntLiteral(0)),
+        BinaryOp(
+          BinaryOp.===,
+          VarRef(LocalIdent(x))(IntType),
+          IntLiteral(0)
+        ),
         IntLiteral(1),
         IntLiteral(0)
       )(IntType)
@@ -67,6 +71,40 @@ object ExecutorTests extends TestSuite{
       ))
       val instance = executor.eval(exp).asInstanceOf[ArrayInstance]
       instance(0).asInstanceOf[ArrayInstance](1) ==> 10
+    }
+
+    test("Labeled jumps") {
+      val label = LabelIdent(LabelName("here"))
+      val exp = Labeled(label, IntType, Block(
+        If(
+          VarRef(LocalIdent(x))(BooleanType),
+          Return(IntLiteral(1), label),
+          Skip()
+        )(IntType),
+        IntLiteral(0)
+      ))
+      
+      executor.eval(exp)(env.bind(x, true)) ==> 1
+      executor.eval(exp)(env.bind(x, false)) ==> 0
+
+      val e = intercept[LabelException] {
+        executor.eval(Return(IntLiteral(1), label))
+      }
+      e.getMessage() ==> "Uncaught Labeled jump: LabelName<here> - 1"
+    }
+
+    test("try catch throw") {
+      val err = LocalIdent(LocalName("e"))
+      val exp = TryCatch(
+        // Without linked classes we cannot instantiate the actual Exception class
+        // But JS allows throwing strings, so we should be fine with it
+        Throw(StringLiteral("can't happen")),
+        err,
+        NoOriginalName,
+        VarRef(err)(StringType)
+      )(StringType)
+      
+      executor.eval(exp) ==> "can't happen"      
     }
   }
 }
