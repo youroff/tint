@@ -26,6 +26,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
   }
 
   def eval(program: Tree)(implicit env: Env): js.Any = {
+    // println(program)
     val result: js.Any = program match {
       case Block(trees) => evalBlock(trees)
       case Skip() => ()
@@ -196,7 +197,8 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         val clazz = eval(ctor).asInstanceOf[js.Dynamic]
         js.Dynamic.newInstance(clazz)(eargs: _*)
 
-      case JSArrayConstr(items) => js.Array(evalSpread(items))
+      case JSArrayConstr(items) =>
+        js.Array(evalSpread(items): _*)
 
       case LoadJSConstructor(className) =>
         val classDef = lookupClassDef(className)
@@ -453,7 +455,6 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         unimplemented(rest, "root")
     }
     // println("EVAL======")
-    // println(program)
     // println("Env: " + env)
     // println(s"Result: $result")
     // println("----------")
