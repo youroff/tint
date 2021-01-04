@@ -9,7 +9,7 @@ object tint extends ScalaJSModule {
   def scalaJSVersion = "1.3.1"
 
   def jsEnvConfig: T[JsEnvConfig] = T { JsEnvConfig.NodeJs(
-    args=List("--stack-size=100000")
+    // args=List("--stack-size=100000")
   ) }
 
   def ivyDeps = Agg(ivy"org.scala-js::scalajs-linker::1.3.1")

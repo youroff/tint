@@ -106,5 +106,14 @@ object ExecutorTests extends TestSuite{
       
       executor.eval(exp) ==> "can't happen"      
     }
+
+    test("try finally") {
+      val err = LocalIdent(LocalName("e"))
+      val exp = TryFinally(
+        Throw(StringLiteral("evil error")),
+        StringLiteral("fallback")
+      )
+      executor.eval(exp) ==> "fallback"      
+    }
   }
 }

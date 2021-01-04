@@ -1,7 +1,7 @@
 package sample
 
 import scala.scalajs.js
-import scala.scalajs.js.annotation._
+// import scala.scalajs.js.annotation._
 
 // @JSExportTopLevel("M")
 // object M {
@@ -11,26 +11,48 @@ import scala.scalajs.js.annotation._
 //   def add2(x: Int) = x + cnst
 // }
 
-// class Foo extends js.Object {
-//   val x: Int = 4
-//   def bar(y: Int): Int = x + y
-// }
+class Rect(val width: Int, val height: Int) extends js.Object {
+  def area = width * height
+  def getWidth = width
+}
 
-// object Sample {
-//   def main(args: Array[String]): Unit = {
-//     // val f = new js.Function("return M.add2(5)").asInstanceOf[js.Function0[Int]]
-//     // val m = M.asInstanceOf[js.Dynamic]
-//     val m = new Foo()
-//     val result = m.bar(5)
-//     println(s"Hello world! $result")
-//   }
-// }
+class Square(val side: Int) extends Rect(side, side) {
+  // def getSide = side
+}
 
 object Sample {
   def main(args: Array[String]): Unit = {
-    val names = List("Sébastien", "Antoine", "Sophie", "Alice")
-    for (name <- names)
-      js.Dynamic.global.console.log(greeting(name))
+    val square = new Square(5)
+    val result = square.area
+    println(s"Hello world! $result")
   }
-  def greeting(name: String): String = "Hello " + name
 }
+
+// object Sample {
+//   def main(args: Array[String]): Unit = {
+//     val names = List("Sébastien", "Antoine", "Sophie", "Alice")
+//     for (name <- names)
+//       js.Dynamic.global.console.log(greeting(name))
+//   }
+//   def greeting(name: String): String = "Hello " + name
+// }
+
+
+// def makeGreeter(greetingFormat: String): js.Dynamic = {
+//   class Greeter extends js.Object {
+//     def greet(name: String): String =
+//       println(greetingFormat.format(name))
+//   }
+//   js.constructorOf[Greeter]
+// }
+// def greetPeople(greeterClass: js.Dynamic): Unit = {
+//   val greeter = js.Dynamic.newInstance(greeterClass)()
+//   greeter.greet("Jane")
+//   greeter.greet("John");
+// }
+// val englishGreeterClass = makeGreeter("Hello, %s!")
+// greetPeople(englishGreeterClass)
+// val frenchGreeterClass = makeGreeter("Bonjour, %s!")
+// greetPeople(frenchGreeterClass)
+// val japaneseGreeterClass = makeGreeter("%sさん、こんにちは。")
+// greetPeople(japaneseGreeterClass)

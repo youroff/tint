@@ -15,20 +15,19 @@ import org.scalajs.ir.Trees.JSNativeLoadSpec.Global
 
 class Executor(classes: Map[ClassName, LinkedClass]) {
   val modules: mutable.Map[ClassName, Instance] = mutable.Map()
-  val jsClasses: mutable.Map[ClassName, js.Any] = mutable.Map()
+  val jsClasses: mutable.Map[ClassName, js.Dynamic] = mutable.Map()
   val classInstances: mutable.Map[ClassName, Instance] = mutable.Map()
   val names = new NameGen()
   implicit val pos = NoPosition
 
   def execute(program: Tree): Unit = {
-    initJSClasses
     eval(program)(Env.empty)
   }
 
   def eval(program: Tree)(implicit env: Env): js.Any = {
     // println(program)
     val result: js.Any = program match {
-      case Block(trees) => evalBlock(trees)
+      case Block(trees) => evalStmts(trees)._1
       case Skip() => ()
       case StringLiteral(value) => value
       case CharLiteral(value) => new CharInstance(value)
@@ -51,9 +50,9 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       }
 
       case ArraySelect(array, index) =>
-          val instance = eval(array).asInstanceOf[ArrayInstance]
-          val i = eval(index).asInstanceOf[Int]
-          instance(i)
+        val instance = eval(array).asInstanceOf[ArrayInstance]
+        val i = eval(index).asInstanceOf[Int]
+        instance(i)
 
       case JSSelect(receiver, prop) =>
         val obj = eval(receiver).asInstanceOf[RawJSValue]
@@ -156,9 +155,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         val alt = asInt(eval(selector))
         val exp = cases.find {
           case (alts, _) => alts.contains(IntLiteral(alt))
-        }
-          .map(_._2)
-          .getOrElse(default)
+        }.map(_._2).getOrElse(default)
         eval(exp)
 
       case Closure(arrow, captureParams, params, body, captureValues) =>
@@ -167,7 +164,8 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
           val argsMap = params.map(_.name.name).zip(args).toMap
           eval(body)(Env.empty.bind(captures).bind(argsMap))
         }
-        new js.Function("body", "return function(...args) { return body(args); };")
+        val fType = if (arrow) "(...args) =>" else "function(...args)"
+        new js.Function("body", s"return $fType { return body(args); };")
           .asInstanceOf[js.Function1[js.Function, js.Any]].apply(call)
 
       case JSObjectConstr(props) =>
@@ -193,9 +191,9 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         new js.Function(s"return typeof $name;").asInstanceOf[js.Function0[String]]()
 
       case JSNew(ctor, args) =>
-        val eargs = evalSpread(args)
-        val clazz = eval(ctor).asInstanceOf[js.Dynamic]
-        js.Dynamic.newInstance(clazz)(eargs: _*)
+        new js.Function("clazz", "args", s"return new clazz(...args);")
+          .asInstanceOf[js.Function2[js.Any, js.Array[_], js.Any]]
+          .apply(eval(ctor), js.Array(evalSpread(args): _*))
 
       case JSArrayConstr(items) =>
         js.Array(evalSpread(items): _*)
@@ -208,14 +206,12 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
             case _ => unimplemented(classDef.jsNativeLoadSpec, "NativeJSClass load spec")
           }
           case JSClass =>
-            jsClasses.get(className).getOrThrow(s"No $className in JS Class cache")
+            initJSClass(className)
           case _ => unimplemented(classDef.kind, "LoadJSConstructor")
         }
 
-      case JSSuperConstructorCall(args) =>
-        // println("PROTO CALL")
-        // println(env)
-        ()
+      case JSSuperConstructorCall(_) =>
+        throw new AssertionError("JSSuperConstructorCall should never be called in eval loop")
 
       case NewArray(typeRef, lengths) =>
         new ArrayInstance(typeRef, (lengths map eval).asInstanceOf[List[Int]])
@@ -230,7 +226,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case IsInstanceOf(expr, tpe) => instanceOf(eval(expr), tpe)
 
       case GetClass(e) => eval(e) match {
-        case instance: Instance => lookupClassInstance(instance)
+        case instance: Instance => lookupClassInstance(instance.className)
       }
 
       case IdentityHashCode(expr) =>
@@ -465,24 +461,25 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     args.map(_.name.name).zip(values map eval).toMap
   }
 
+  /**
+  * TODO: Return js.Array as vast use cases expect that
+  */
   def evalSpread(args: List[TreeOrJSSpread])(implicit env: Env): List[js.Any] = args flatMap {
     case t: Tree => List(eval(t))
     case JSSpread(items) => eval(items).asInstanceOf[js.Array[js.Any]].toList
   }
 
-  def evalBlock(stmts: List[Tree])(implicit env: Env): js.Any = {
-    stmts match {
-      case VarDef(LocalIdent(name), _, _, _, e) :: rest => 
-        val result = eval(e)
-        // p(result)
-        evalBlock(rest)(env.bind(name, result))
-      case e :: Nil =>
-        eval(e)
-      case e :: rest =>
-        eval(e)
-        evalBlock(rest)
-      case Nil => ()
+  def evalStmts(stmts: List[Tree])(implicit initialEnv: Env): (js.Any, Env) = {
+    var result: js.Any = js.undefined
+    var env = initialEnv
+    stmts.foreach {
+      case VarDef(LocalIdent(name), _, _, _, e) =>
+        result = js.undefined
+        env = env.bind(name, eval(e)(env))
+      case anything =>
+        result = eval(anything)(env)
     }
+    (result, env)
   }
 
   def evalJsMethodBody(params: List[ParamDef], body: Tree)(implicit env: Env): js.Any = {
@@ -538,14 +535,14 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       .getOrThrow(s"Constructor for $name not found").value
   }
 
-  def lookupClassInstance(instance: Instance): Instance = {
-    classInstances.getOrElseUpdate(instance.className, {
+  def lookupClassInstance(className: ClassName): Instance = {
+    classInstances.getOrElseUpdate(className, {
       val tmp = LocalName("dataTmp")
       eval(New(
         ClassClass,
         MethodIdent(MethodName(ConstructorSimpleName, List(ClassRef(ObjectClass)), VoidRef)),
         List(VarRef(LocalIdent(tmp))(AnyType))
-      ))(Env.empty.bind(tmp, genTypeData(instance.className))).asInstanceOf[Instance]
+      ))(Env.empty.bind(tmp, genTypeData(className))).asInstanceOf[Instance]
     })
   }
 
@@ -576,10 +573,17 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     case (instance: Instance, ClassType(ObjectClass)) => true
     case (instance: Instance, ClassType(className)) =>
       isSubclassOf(instance.className, className)
+    case (_, AnyType) => true
     case _ =>
       unimplemented((value, tpe), "instanceOf")
   }
 
+  /** 
+   * Check if left className is a subclass of the right className
+   * - classNames are equal
+   * - recursively call on a superClass of left className
+   * - recursively check interfaces using the same algorithm
+  */
   def isSubclassOf(lhs: ClassName, rhs: ClassName): Boolean = {
     val classDef = lookupClassDef(lhs)
     lhs.equals(rhs) ||
@@ -587,35 +591,123 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     classDef.interfaces.map(_.name).exists(isSubclassOf(_, rhs))
   }
 
-  def initJSClasses = {
-    for ((className, linkedClass) <- classes if linkedClass.kind == JSClass) {
-      val jsName = names.genName(className)
+  /** 
+   * Assuming `linkedClass` is a JSClass, find JSMethodDef named `constructor`
+  */
+  def lookupJSConstructor(linkedClass: LinkedClass): JSMethodDef = {
+    linkedClass.exportedMembers
+      .map(_.value)
+      .find {
+        case JSMethodDef(_, StringLiteral("constructor"), _, _) => true
+        case _ => false
+      }.getOrThrow(s"Cannot find constructor in ${linkedClass.className} exportedMembers")
+      .asInstanceOf[JSMethodDef]
+  }
+
+  /** Split constructor body into prelude, args tree and epilog
+   * This function automatically checks invariant (either):
+   * - JSSuperConstructorCall(args)
+   * - Block(..., JSSuperConstructorCall(args), ...)
+  */
+  def splitJSConstructor(tree: Tree): (List[Tree], List[TreeOrJSSpread], List[Tree]) = tree match {
+    case JSSuperConstructorCall(args) => (Nil, args, Nil)
+    case Block(stmts) =>
+      val ctor = stmts.find {
+        case JSSuperConstructorCall(_) => true
+        case _ => false
+      }.getOrThrow("Invariant violation: JSConstructor block doesn't have JSSuperConstructorCall")
+        .asInstanceOf[JSSuperConstructorCall]
+      val (prelude, _::epilog) = stmts.splitAt(stmts.indexOf(ctor))
+      (prelude, ctor.args, epilog)
+    case _ =>
+      throw new AssertionError("Invariant violation: JSConstructor is neither Block nor JSSuperConstructorCall")
+  }
+
+  /** Generates JSClass value
+    */
+  def initJSClass(className: ClassName): js.Dynamic = {
+    jsClasses.getOrElseUpdate(className, {
+      val linkedClass = lookupClassDef(className) 
+      val jsClass = names.genName(className)
+      val jsSuperClass = linkedClass.superClass.map { superClass =>
+        if (superClass.name == ClassName("scala.scalajs.js.Object")) {
+          "Object"
+        } else {
+          initJSClass(superClass.name)
+          names.genName(superClass.name)
+        }
+      }.getOrThrow("JSClass must have a super class")
+
+      val ctorDef = lookupJSConstructor(linkedClass)
+      val (preludeTree, superArgs, epilogTree) = splitJSConstructor(ctorDef.body)
+      
+      val prelude = { (args: js.Array[js.Any]) =>
+        val argsMap = ctorDef.args.map(_.name.name).zip(args).toMap
+        evalStmts(preludeTree)(Env.empty.bind(argsMap))._2
+      } : js.Function1[js.Array[js.Any], Env]
+
+      val evalSuperArgs = { (env: Env) =>
+        js.Array(evalSpread(superArgs)(env): _*)
+      } : js.Function1[Env, js.Array[js.Any]]
+
+      val epilog = { (thiz: js.Object, env: Env) =>
+        linkedClass.fields.foreach {
+          case JSFieldDef(flags, StringLiteral(field), tpe) =>
+            val descriptor = js.Dynamic.literal(
+              configurable = true,
+              enumerable = true,
+              writable = true,
+              value = Types.zeroOf(tpe)
+            ).asInstanceOf[js.PropertyDescriptor]
+            js.Object.defineProperty(thiz, field, descriptor)
+          case _ =>
+            throw new Exception("Only JSFieldDefs are allowed at JSClasses")  
+        }
+
+        eval(Block(epilogTree))(env.setThis(thiz))
+      } : js.Function2[js.Object, Env, js.Any]
+
+      val extending = { () =>
+        linkedClass.superClass.map { superClass =>
+          if (superClass.name == ClassName("scala.scalajs.js.Object")) {
+            js.constructorOf[js.Object]
+          } else {
+            initJSClass(superClass.name)
+          }
+        }.getOrThrow("JSClass must have a super class").asInstanceOf[js.Object]
+      } : js.Function0[js.Object]
+
       val classInstance = new js.Function(
-        s"""return class $jsName {
-
+        s"prelude_$jsClass",
+        s"evalSuperArgs_$jsClass",
+        s"epilog_$jsClass",
+        s"super_$jsClass",
+        s"""return class $jsClass extends super_$jsClass() {
+          constructor(...args) {
+            const env = prelude_$jsClass(args);
+            const superArgs = evalSuperArgs_$jsClass(env)
+            super(...superArgs);
+            epilog_$jsClass(this, env);
+          }
         };"""
-      ).asInstanceOf[js.Function0[js.Any]]().asInstanceOf[js.Dynamic]
+      ).asInstanceOf[js.Function4[js.Function, js.Function, js.Function, js.Function, js.Any]].apply(
+        prelude,
+        evalSuperArgs,
+        epilog,
+        extending
+      ).asInstanceOf[js.Dynamic]
 
-      linkedClass.fields.foreach {
-        case JSFieldDef(flags, StringLiteral(field), tpe) =>
-          classInstance.updateDynamic(field)(Types.zeroOf(tpe))
-        case _ =>
-          throw new Exception("Only JSFieldDefs allowed with JSClasses")
-      }
-
-      // linkedClass.jsClassCaptures.foreach(println(_))
       linkedClass.exportedMembers.map(_.value).foreach {
-        case JSMethodDef(flags, StringLiteral(name), args, body) =>
-          val methodBody = evalJsMethodBody(args, body)(Env.empty.setThis(classInstance))
-          classInstance.updateDynamic(name)(methodBody)
+        case desc @ JSPropertyDef(flags, StringLiteral(name), _, _) =>
+          val descriptor = evalPropertyDescriptor(desc)(Env.empty)
+          js.Object.defineProperty(classInstance.selectDynamic("prototype").asInstanceOf[js.Object], name, descriptor)
+        case _ => ()
       }
-      jsClasses.put(className, classInstance)
-    }
+      classInstance
+    })
   }
 
   def unimplemented(t: Any, site: String = "default") = {
-    // p(t.asInstanceOf[js.Any])
-    // println(s"Called at $site")
     println(s"Unimplemented $t")
     ???
   }
