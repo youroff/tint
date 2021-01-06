@@ -98,7 +98,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         val methodDef = lookupMethodDef(className, methodIdent.name, nspace)
         val eargs = evalArgs(methodDef.args, args)
         eval(methodDef.body.get)(Env.empty.bind(eargs))
-      
+
       case New(name, ctor, args) =>
         val instance = new Instance(name, this)
         val ctorDef = lookupMethodDef(name, ctor.name, MemberNamespace.Constructor)
@@ -159,7 +159,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       }
 
       case TryFinally(block, finalizer) => try {
-        eval(block)          
+        eval(block)
       } finally {
         eval(finalizer)
       }
@@ -202,7 +202,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
           case (k, v) => (eval(k), eval(v))
         }
         js.special.objectLiteral(inits: _*)
- 
+
       case JSDelete(qualifier, item) =>
         js.special.delete(eval(qualifier), eval(item))
 
@@ -533,7 +533,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       .asInstanceOf[js.Function1[js.Function, js.Any]].apply(call)
   }
 
-  def evalPropertyDescriptor(desc: JSPropertyDef)(implicit env: Env): js.PropertyDescriptor = {    
+  def evalPropertyDescriptor(desc: JSPropertyDef)(implicit env: Env): js.PropertyDescriptor = {
     js.Dynamic.literal(
       get = desc.getterBody.map { body =>
         { (thiz) => eval(body)(env.setThis(thiz)) } : js.ThisFunction0[js.Any, js.Any]
@@ -605,22 +605,40 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
   }
 
   def cast(value: js.Any, tpe: Type)(implicit env: Env): js.Any = tpe match {
-    case ClassType(BoxedStringClass) => value.asInstanceOf[String]
     case BooleanType => value.asInstanceOf[Boolean]
     case IntType => value.asInstanceOf[Int]
-    case _ => value
-  } 
-
-  def instanceOf(value: js.Any, tpe: Type): js.Any = (value, tpe) match {
-    case (instance: Instance, ClassType(ObjectClass)) => true
-    case (instance: Instance, ClassType(className)) =>
-      isSubclassOf(instance.className, className)
-    case (_, AnyType) => true
     case _ =>
-      unimplemented((value, tpe), "instanceOf")
+      if (value == null || instanceOf(value, tpe))
+        value
+      else
+        throw new ClassCastException()
   }
 
-  /** 
+  def isSubtype(lhs: Type, rhs: Type): Boolean =
+    org.scalajs.ir.Types.isSubtype(lhs, rhs)(isSubclassOf(_, _))
+
+  def instanceOf(value: js.Any, tpe: Type): Boolean = (value: Any) match {
+    case null =>
+      false
+    case value: Byte => // (typeof value === 'number') && (value | 0 === value) && (value >= -128) && (value < 128)
+      isSubtype(ByteType, tpe) ||
+      isSubtype(ShortType, tpe) ||
+      isSubtype(IntType, tpe) ||
+      isSubtype(FloatType, tpe) ||
+      isSubtype(DoubleType, tpe)
+    case value: Short =>
+      isSubtype(ShortType, tpe) ||
+      isSubtype(IntType, tpe) ||
+      isSubtype(FloatType, tpe) ||
+      isSubtype(DoubleType, tpe)
+    // ... all primitives
+    case () =>
+      isSubtype(UndefType, tpe)
+    case value: Instance =>
+      isSubtype(ClassType(value.className), tpe)
+  }
+
+  /**
    * Check if left className is a subclass of the right className
    * - classNames are equal
    * - recursively call on a superClass of left className
@@ -633,7 +651,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     classDef.interfaces.map(_.name).exists(isSubclassOf(_, rhs))
   }
 
-  /** 
+  /**
    * Assuming `linkedClass` is a JSClass, find JSMethodDef named `constructor`
   */
   def lookupJSConstructor(linkedClass: LinkedClass): JSMethodDef = {
@@ -669,86 +687,89 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     */
   def initJSClass(className: ClassName): js.Dynamic = {
     jsClasses.getOrElseUpdate(className, {
-      val linkedClass = lookupClassDef(className) 
-      val jsClass = names.genName(className)
-      val jsSuperClass = linkedClass.superClass.map { superClass =>
-        if (superClass.name == ClassName("scala.scalajs.js.Object")) {
-          "Object"
-        } else {
-          initJSClass(superClass.name)
-          names.genName(superClass.name)
-        }
-      }.getOrThrow("JSClass must have a super class")
-
-      val ctorDef = lookupJSConstructor(linkedClass)
-      val (preludeTree, superArgs, epilogTree) = splitJSConstructor(ctorDef.body)
-      
-      val prelude = { (args: js.Array[js.Any]) =>
-        val argsMap = ctorDef.args.map(_.name.name).zip(args).toMap
-        evalStmts(preludeTree)(Env.empty.bind(argsMap))._2
-      } : js.Function1[js.Array[js.Any], Env]
-
-      val evalSuperArgs = { (env: Env) =>
-        js.Array(evalSpread(superArgs)(env): _*)
-      } : js.Function1[Env, js.Array[js.Any]]
-
-      val epilog = { (thiz: js.Object, env: Env) =>
-        linkedClass.fields.foreach {
-          case JSFieldDef(flags, StringLiteral(field), tpe) =>
-            val descriptor = js.Dynamic.literal(
-              configurable = true,
-              enumerable = true,
-              writable = true,
-              value = Types.zeroOf(tpe)
-            ).asInstanceOf[js.PropertyDescriptor]
-            js.Object.defineProperty(thiz, field, descriptor)
-          case _ =>
-            throw new Exception("Only JSFieldDefs are allowed at JSClasses")  
-        }
-
-        eval(Block(epilogTree))(env.setThis(thiz))
-      } : js.Function2[js.Object, Env, js.Any]
-
-      val extending = { () =>
-        linkedClass.superClass.map { superClass =>
-          if (superClass.name == ClassName("scala.scalajs.js.Object")) {
-            js.constructorOf[js.Object]
-          } else {
-            initJSClass(superClass.name)
-          }
-        }.getOrThrow("JSClass must have a super class").asInstanceOf[js.Object]
-      } : js.Function0[js.Object]
-
-      val classInstance = new js.Function(
-        s"prelude_$jsClass",
-        s"evalSuperArgs_$jsClass",
-        s"epilog_$jsClass",
-        s"super_$jsClass",
-        s"""return class $jsClass extends super_$jsClass() {
-          constructor(...args) {
-            const env = prelude_$jsClass(args);
-            const superArgs = evalSuperArgs_$jsClass(env)
-            super(...superArgs);
-            epilog_$jsClass(this, env);
-          }
-        };"""
-      ).asInstanceOf[js.Function4[js.Function, js.Function, js.Function, js.Function, js.Any]].apply(
-        prelude,
-        evalSuperArgs,
-        epilog,
-        extending
-      ).asInstanceOf[js.Dynamic]
-
-      val prototype = classInstance.selectDynamic("prototype")
-      linkedClass.exportedMembers.map(_.value).foreach {
-        case desc @ JSPropertyDef(flags, StringLiteral(name), _, _) =>
-          val descriptor = evalPropertyDescriptor(desc)(Env.empty)
-          js.Object.defineProperty(prototype.asInstanceOf[js.Object], name, descriptor)
-        case JSMethodDef(flags, StringLiteral(name), args, body) =>
-          prototype.updateDynamic(name)(evalJsFunction(args, body)(Env.empty))
-      }
-      classInstance
+      createJSCreate(className, Nil)
     })
+  }
+
+  def createJSCreate(className: ClassName, classCaptureValues: List[js.Any]): js.Dynamic = {
+    val linkedClass = lookupClassDef(className)
+    val jsClass = names.genName(className)
+
+    val envWithClassCaptures = evalArgs(linkedClass.jsClassCaptures.getOrElse(Nil), classCaptureValues)
+
+    val ctorDef = lookupJSConstructor(linkedClass)
+    val (preludeTree, superArgs, epilogTree) = splitJSConstructor(ctorDef.body)
+
+    val prelude = { (args: js.Array[js.Any]) =>
+      val argsMap = ctorDef.args.map(_.name.name).zip(args).toMap
+      evalStmts(preludeTree)(Env.empty.bind(argsMap))._2
+    } : js.Function1[js.Array[js.Any], Env]
+
+    val evalSuperArgs = { (env: Env) =>
+      js.Array(evalSpread(superArgs)(env): _*)
+    } : js.Function1[Env, js.Array[js.Any]]
+
+    val epilog = { (thiz: js.Object, env: Env) =>
+      linkedClass.fields.foreach {
+        case JSFieldDef(flags, StringLiteral(field), tpe) =>
+          val descriptor = js.Dynamic.literal(
+            configurable = true,
+            enumerable = true,
+            writable = true,
+            value = Types.zeroOf(tpe)
+          ).asInstanceOf[js.PropertyDescriptor]
+          js.Object.defineProperty(thiz, field, descriptor)
+        case _ =>
+          throw new Exception("Only JSFieldDefs are allowed at JSClasses")
+      }
+
+      eval(Block(epilogTree))(env.setThis(thiz))
+    } : js.Function2[js.Object, Env, js.Any]
+
+    val extending = { () =>
+      linkedClass.jsSuperClass match {
+        case Some(jsSuperClass) =>
+          eval(jsSuperClass)(envWithClassCaptures)
+        case None =>
+          linkedClass.superClass.map { superClass =>
+            if (superClass.name == ClassName("scala.scalajs.js.Object")) {
+              js.constructorOf[js.Object]
+            } else {
+              initJSClass(superClass.name)
+            }
+          }.getOrThrow("JSClass must have a super class").asInstanceOf[js.Object]
+      }
+    } : js.Function0[js.Object]
+
+    val classInstance = new js.Function(
+      s"prelude_$jsClass",
+      s"evalSuperArgs_$jsClass",
+      s"epilog_$jsClass",
+      s"super_$jsClass",
+      s"""return class $jsClass extends super_$jsClass() {
+        constructor(...args) {
+          const env = prelude_$jsClass(args);
+          const superArgs = evalSuperArgs_$jsClass(env)
+          super(...superArgs);
+          epilog_$jsClass(this, env);
+        }
+      };"""
+    ).asInstanceOf[js.Function4[js.Function, js.Function, js.Function, js.Function, js.Any]].apply(
+      prelude,
+      evalSuperArgs,
+      epilog,
+      extending
+    ).asInstanceOf[js.Dynamic]
+
+    val prototype = classInstance.selectDynamic("prototype")
+    linkedClass.exportedMembers.map(_.value).foreach {
+      case desc @ JSPropertyDef(flags, StringLiteral(name), _, _) =>
+        val descriptor = evalPropertyDescriptor(desc)(Env.empty)
+        js.Object.defineProperty(prototype.asInstanceOf[js.Object], name, descriptor)
+      case JSMethodDef(flags, StringLiteral(name), args, body) =>
+        prototype.updateDynamic(name)(evalJsFunction(args, body)(Env.empty))
+    }
+    classInstance
   }
 
   def resolvePropertyDescriptor(clazz: js.Dynamic, prop: String): Option[js.PropertyDescriptor] = {
@@ -771,7 +792,7 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
   def dumpObj(obj: js.Any): Unit = {
     println(js.Object.entries(obj.asInstanceOf[js.Object]))
   }
-  
+
   def p(obj: js.Any) = {
     js.Dynamic.global.console.log(obj)
   }
