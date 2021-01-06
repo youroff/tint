@@ -10,7 +10,7 @@ import org.scalajs.linker.interface.unstable.ModuleInitializerImpl._
 object Tint {
   def main(args: Array[String]): Unit = {
     Linker.link(
-      Seq("out/sample/compile/dest/classes/sample"),
+      Seq("sample/target/scala-2.13/classes/sample"),
       "sample.Sample"
     ).foreach { moduleSet =>
       val defs = moduleSet.modules.flatMap(_.classDefs).map(c => (c.name.name, c)).toMap
