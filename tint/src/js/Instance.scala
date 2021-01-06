@@ -26,7 +26,7 @@ class Instance(val className: ClassName, exec: Executor) extends js.Object {
     linkedClass.exportedMembers.map(_.value).foreach {
       case JSMethodDef(flags, name, args, body) =>
         val methodName = exec.eval(name).asInstanceOf[String]
-        val methodBody = exec.evalJsMethodBody(args, body)
+        val methodBody = exec.evalJsFunction(args, body)
         this.asInstanceOf[js.Dynamic].updateDynamic(methodName)(methodBody)
       
       case desc @ JSPropertyDef(_, name, _, _) =>

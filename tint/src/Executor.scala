@@ -49,6 +49,8 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         case rest => unimplemented(rest, "Select")
       }
 
+      // case Select
+
       case ArraySelect(array, index) =>
         val instance = eval(array).asInstanceOf[ArrayInstance]
         val i = eval(index).asInstanceOf[Int]
@@ -58,6 +60,17 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         val obj = eval(receiver).asInstanceOf[RawJSValue]
         val idx = eval(prop)
         obj.jsPropertyGet(idx)
+
+      case JSSuperSelect(superClass, receiver, item) =>
+        val clazz = eval(superClass).asInstanceOf[js.Dynamic]
+        val propName = eval(item).asInstanceOf[String]
+        val propDesc = resolvePropertyDescriptor(clazz, propName)
+          .getOrThrow(s"Cannot resolve super property $propName on $clazz")
+        if (propDesc.get.isDefined) {
+          propDesc.get.get.call(eval(receiver))
+        } else {
+          propDesc.value.get.asInstanceOf[js.Any]
+        }
 
       case Apply(flags, receiver, method, args) =>
         val instance = eval(receiver)
@@ -123,7 +136,19 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
           obj.jsPropertySet(eval(prop), eval(rhs))
         }
 
-        case rest => unimplemented(rest, "Assign")
+        case JSSuperSelect(superClass, receiver, item) =>
+          val clazz = eval(superClass).asInstanceOf[js.Dynamic]
+          val propName = eval(item).asInstanceOf[String]
+          val propDesc = resolvePropertyDescriptor(clazz, propName)
+            .getOrThrow(s"Cannot resolve super property $propName on $clazz")
+          if (propDesc.set.isDefined) {
+            propDesc.set.get.call(eval(receiver), eval(rhs))
+          } else {
+            propDesc.value = eval(rhs)
+          }
+
+        case nonSelect =>
+          throw new AssertionError(s"Selector expected in lhs of Assign, given: $nonSelect")
       }
 
       case TryCatch(block, err, _, handler) => try {
@@ -151,6 +176,11 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
       case DoWhile(body, cond) =>
         do { eval(body) } while (asBoolean(eval(cond)))
 
+      case ForIn(obj, key, _, body) =>
+        js.special.forin(eval(obj)) { (arg) =>
+          eval(body)(env.bind(key.name, arg.asInstanceOf[js.Any]))
+        }
+
       case Match(selector, cases, default) =>
         val alt = asInt(eval(selector))
         val exp = cases.find {
@@ -158,15 +188,14 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         }.map(_._2).getOrElse(default)
         eval(exp)
 
-      case Closure(arrow, captureParams, params, body, captureValues) =>
-        val captures = evalArgs(captureParams, captureValues)
-        val call: js.Function1[js.Array[js.Any], js.Any] = { args =>
-          val argsMap = params.map(_.name.name).zip(args).toMap
-          eval(body)(Env.empty.bind(captures).bind(argsMap))
-        }
-        val fType = if (arrow) "(...args) =>" else "function(...args)"
-        new js.Function("body", s"return $fType { return body(args); };")
-          .asInstanceOf[js.Function1[js.Function, js.Any]].apply(call)
+      case Debugger() =>
+        throw new AssertionError("Trying to debug undebuggable? :)")
+
+      case Closure(true, captureParams, params, body, captureValues) =>
+        evalJsClosure(params, body)(Env.empty.bind(evalArgs(captureParams, captureValues)))
+
+      case Closure(false, captureParams, params, body, captureValues) =>
+        evalJsFunction(params, body)(Env.empty.bind(evalArgs(captureParams, captureValues)))
 
       case JSObjectConstr(props) =>
         val inits = props.map {
@@ -185,10 +214,10 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         obj.jsMethodApply(eval(method))(evalSpread(args): _*)
 
       case JSGlobalRef(name) =>
-        new js.Function(s"return $name;").asInstanceOf[js.Function0[js.Any]]()
+        js.eval(name).asInstanceOf[js.Any]
 
       case JSTypeOfGlobalRef(JSGlobalRef(name)) =>
-        new js.Function(s"return typeof $name;").asInstanceOf[js.Function0[String]]()
+        js.eval(s"typeof $name").asInstanceOf[String]
 
       case JSNew(ctor, args) =>
         new js.Function("clazz", "args", s"return new clazz(...args);")
@@ -227,7 +256,11 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
 
       case GetClass(e) => eval(e) match {
         case instance: Instance => lookupClassInstance(instance.className)
+        case _ => null
       }
+
+      case ClassOf(ClassRef(className)) =>
+        lookupClassInstance(className)
 
       case IdentityHashCode(expr) =>
         scala.scalajs.runtime.identityHashCode(eval(expr))
@@ -482,12 +515,21 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
     (result, env)
   }
 
-  def evalJsMethodBody(params: List[ParamDef], body: Tree)(implicit env: Env): js.Any = {
-    val call: js.Function1[js.Array[js.Any], js.Any] = { args =>
+  def evalJsFunction(params: List[ParamDef], body: Tree)(implicit env: Env): js.Any = {
+    val call: js.Function2[js.Any, js.Array[js.Any], js.Any] = { (thizz, args) =>
+      val argsMap = params.map(_.name.name).zip(args).toMap
+      eval(body)(env.bind(argsMap).setThis(thizz))
+    }
+    new js.Function("body", "return function(...args) { return body(this, args); };")
+      .asInstanceOf[js.Function1[js.Function, js.Any]].apply(call)
+  }
+
+  def evalJsClosure(params: List[ParamDef], body: Tree)(implicit env: Env): js.Any = {
+    val call: js.Function1[js.Array[js.Any], js.Any] = { (args) =>
       val argsMap = params.map(_.name.name).zip(args).toMap
       eval(body)(env.bind(argsMap))
     }
-    new js.Function("body", "return function(...args) { return body(args); };")
+    new js.Function("body", "return (...args) => { return body(args); };")
       .asInstanceOf[js.Function1[js.Function, js.Any]].apply(call)
   }
 
@@ -697,14 +739,28 @@ class Executor(classes: Map[ClassName, LinkedClass]) {
         extending
       ).asInstanceOf[js.Dynamic]
 
+      val prototype = classInstance.selectDynamic("prototype")
       linkedClass.exportedMembers.map(_.value).foreach {
         case desc @ JSPropertyDef(flags, StringLiteral(name), _, _) =>
           val descriptor = evalPropertyDescriptor(desc)(Env.empty)
-          js.Object.defineProperty(classInstance.selectDynamic("prototype").asInstanceOf[js.Object], name, descriptor)
-        case _ => ()
+          js.Object.defineProperty(prototype.asInstanceOf[js.Object], name, descriptor)
+        case JSMethodDef(flags, StringLiteral(name), args, body) =>
+          prototype.updateDynamic(name)(evalJsFunction(args, body)(Env.empty))
       }
       classInstance
     })
+  }
+
+  def resolvePropertyDescriptor(clazz: js.Dynamic, prop: String): Option[js.PropertyDescriptor] = {
+    var superProto = clazz.selectDynamic("prototype").asInstanceOf[js.Object]
+    while (superProto != null) {
+      val desc = js.Object.getOwnPropertyDescriptor(superProto, prop)
+      if (desc != null) {
+        return Some(desc)
+      }
+      superProto = js.Object.getPrototypeOf(superProto)
+    }
+    None
   }
 
   def unimplemented(t: Any, site: String = "default") = {

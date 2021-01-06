@@ -42,6 +42,17 @@ object ExecutorTests extends TestSuite{
       executor.eval(exp)(env.bind(x, 1)) ==> 0
     }
 
+    test("While loop") {
+      val envX = env.bind(x, 10)
+      val refX = VarRef(LocalIdent(x))(IntType)
+      val exp = While(
+        BinaryOp(BinaryOp.Int_>, refX, IntLiteral(0)),
+        Assign(refX, BinaryOp(BinaryOp.Int_-, refX, IntLiteral(1)))
+      )
+      executor.eval(exp)(envX)
+      envX.read(x) ==> 0
+    }
+
     test("Boxing of Chars") {
       val exp = UnaryOp(UnaryOp.CharToInt, CharLiteral('A'))
       executor.eval(exp) ==> 65
@@ -108,12 +119,18 @@ object ExecutorTests extends TestSuite{
     }
 
     test("try finally") {
-      val err = LocalIdent(LocalName("e"))
+      val envX = env.bind(x, 10)
+      val refX = VarRef(LocalIdent(x))(IntType)
       val exp = TryFinally(
         Throw(StringLiteral("evil error")),
-        StringLiteral("fallback")
+        Assign(refX, IntLiteral(0))
       )
-      executor.eval(exp) ==> "fallback"      
+      envX.read(x) ==> 10
+      val e = intercept[js.JavaScriptException] {
+        executor.eval(exp)(envX)
+      }
+      e.getMessage() ==> "evil error"
+      envX.read(x) ==> 0      
     }
   }
 }

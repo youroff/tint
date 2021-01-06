@@ -1,7 +1,7 @@
 package sample
 
 import scala.scalajs.js
-// import scala.scalajs.js.annotation._
+import scala.scalajs.js.annotation._
 
 // @JSExportTopLevel("M")
 // object M {
@@ -11,20 +11,35 @@ import scala.scalajs.js
 //   def add2(x: Int) = x + cnst
 // }
 
+// @JSExportTopLevel("Bar")
+// object Foo {
+
+//   // @JSExport
+//   var bar = 1
+
+//   // @JSExport
+//   def sayHello(): Unit = {
+//     println("Hello world!")
+//   }
+// }
+
 class Rect(val width: Int, val height: Int) extends js.Object {
   def area = width * height
   def getWidth = width
+  def multWidth(x: Int) = width * x
 }
 
 class Square(val side: Int) extends Rect(side, side) {
-  // def getSide = side
+  def getSuperWidth = super.getWidth
 }
 
 object Sample {
   def main(args: Array[String]): Unit = {
     val square = new Square(5)
     val result = square.area
-    println(s"Hello world! $result")
+    val lambda = (x: Int) => x * result
+    println("Lambda says " + lambda(2))
+    println(s"Hello world! $result ${square.getSuperWidth} ${square.multWidth(2)}")
   }
 }
 

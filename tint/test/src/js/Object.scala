@@ -15,38 +15,42 @@ object ObjectTests extends TestSuite{
 
   val tests = Tests {   
     val executor = new Executor(Map())
+    val objTree = JSObjectConstr(List(
+      (StringLiteral("a"), IntLiteral(1)),
+      (StringLiteral("b"), BooleanLiteral(true)),
+    ))
 
     test("construction and select") {
-      val objTree = JSObjectConstr(List(
-        (StringLiteral("a"), IntLiteral(1)),
-        (StringLiteral("b"), BooleanLiteral(true)),
-      ))
-
       executor.eval(JSSelect(objTree, StringLiteral("a"))) ==> 1
       executor.eval(JSSelect(objTree, StringLiteral("b"))) ==> true
       executor.eval(JSSelect(objTree, StringLiteral("c"))) ==> js.undefined
     }
 
+    test("property delete") {
+      executor.eval(Block(
+        VarDef(LocalIdent(x), OriginalName.NoOriginalName, AnyType, false, objTree),
+        JSDelete(VarRef(LocalIdent(x))(AnyType), StringLiteral("b")),
+        JSSelect(VarRef(LocalIdent(x))(AnyType), StringLiteral("b"))
+      )) ==> js.undefined
+    }
+
     test("property descriptor") {
-      val obj = js.special.objectLiteral()
+      val obj = js.Dynamic.literal(x = 10)
       val selector = JSSelect(This()(AnyType), StringLiteral("x"))
       val descriptor = executor.evalPropertyDescriptor(JSPropertyDef(
         MemberFlags.empty,
         StringLiteral("y"),
-        Some(selector),
+        Some(JSUnaryOp(JSUnaryOp.-, selector)),
         Some((
           ParamDef(LocalIdent(LocalName("value")), OriginalName.NoOriginalName, AnyType, false, false),
           Assign(selector, VarRef(LocalIdent(LocalName("value")))(AnyType))
         ))
       ))
       js.Object.defineProperty(obj, "y", descriptor)
-
-      new js.Function("obj", "return obj.y;")
-        .asInstanceOf[js.Function1[js.Object, js.Any]](obj) ==> js.undefined
-      new js.Function("obj", "val", "obj.y = val;")
-        .asInstanceOf[js.Function2[js.Object, js.Any, js.Any]](obj, 1) ==> js.undefined
-      new js.Function("obj", "return obj.y;")
-        .asInstanceOf[js.Function1[js.Object, js.Any]](obj) ==> 1
+      val dynObj = obj.asInstanceOf[js.Dynamic]
+      dynObj.selectDynamic("y") ==> -10
+      dynObj.updateDynamic("y")(1)
+      dynObj.selectDynamic("y") ==> -1
     }
   }
 }
