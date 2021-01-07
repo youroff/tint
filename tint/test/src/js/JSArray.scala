@@ -13,7 +13,7 @@ object JSArrayTests extends TestSuite{
   implicit val env = Env.empty
 
   val tests = Tests {   
-    val executor = new Executor(Map())
+    val executor = new Executor(ClassManager.empty)
 
     test("construction and select") {
       val arrTree = JSArrayConstr(List(StringLiteral("a"), StringLiteral("b")))

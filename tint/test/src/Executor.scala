@@ -14,7 +14,7 @@ object ExecutorTests extends TestSuite{
   val x = LocalName("x")
 
   val tests = Tests {
-    val executor = new Executor(Map())
+    val executor = new Executor(ClassManager.empty)
     
     test("block execution returns last expression") {
       executor.eval(Block(List(StringLiteral("LOL")))) ==> "LOL"

@@ -6,15 +6,15 @@ import org.scalajs.ir.Types._
 import org.scalajs.ir.Names.ClassName
 import scala.concurrent.ExecutionContext.Implicits.global
 import org.scalajs.linker.interface.unstable.ModuleInitializerImpl._
+import org.scalajs.linker.interface.ModuleInitializer
 
 object Tint {
   def main(args: Array[String]): Unit = {
     Linker.link(
       Seq("sample/target/scala-2.13/classes/sample"),
-      "sample.Sample"
+      ModuleInitializer.mainMethodWithArgs("sample.Sample", "main")
     ).foreach { moduleSet =>
-      val defs = moduleSet.modules.flatMap(_.classDefs).map(c => (c.name.name, c)).toMap
-      val executor = new Executor(defs)
+      val executor = new Executor(ClassManager.fromModuleSet(moduleSet))
       implicit val pos = Position.NoPosition
       moduleSet.modules.foreach { module =>
         module.initializers.foreach {
@@ -28,19 +28,6 @@ object Tint {
         }
       }
     }
-    // .foreach { moduleSet =>
-    //   moduleSet
-    //   val defs = unit.classDefs.map(c => (c.name.name, c)).toMap
-    //   val executor = new Executor(defs)
-
-    //   val initializer = unit.moduleInitializers(0).asInstanceOf[MainMethodWithArgs]
-    //   val className = initializer.className
-    //   val methodName = initializer.encodedMainMethodName
-    //   implicit val pos = Position.NoPosition
-    //   val values = List(convertArgs(initializer.args))
-    //   val tree = ApplyStatic(ApplyFlags.empty, className, MethodIdent(methodName), values)(NoType)
-    //   executor.execute(tree)
-    // }
   }
 
   def convertArgs(args: List[String]): Tree = ArrayValue(

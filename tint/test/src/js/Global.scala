@@ -13,7 +13,7 @@ object GlobalTests extends TestSuite{
   implicit val env = Env.empty
 
   val tests = Tests {   
-    val executor = new Executor(Map())
+    val executor = new Executor(ClassManager.empty)
 
     test("JSGlobalRef") {
       executor.eval(JSGlobalRef("console")) ==> js.Dynamic.global.console
@@ -24,7 +24,8 @@ object GlobalTests extends TestSuite{
     }
 
     // test("Imports... some") {
-    //   println(js.eval("import('jsdom').then(e => console.log(e))"))
+    //   implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
+    //   js.`import`("fs").toFuture.map(println(_))
     // }
 
   }

@@ -11,6 +11,7 @@
  */
 
 package tint
+package utils
 
 import scala.collection.mutable
 

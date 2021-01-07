@@ -14,7 +14,7 @@ object ObjectTests extends TestSuite{
   val x = LocalName("x")
 
   val tests = Tests {   
-    val executor = new Executor(Map())
+    val executor = new Executor(ClassManager.empty)
     val objTree = JSObjectConstr(List(
       (StringLiteral("a"), IntLiteral(1)),
       (StringLiteral("b"), BooleanLiteral(true)),

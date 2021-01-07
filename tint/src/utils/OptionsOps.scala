@@ -1,3 +1,4 @@
+package tint
 package utils
 
 object Utils {
