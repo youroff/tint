@@ -34,6 +34,16 @@ object Types {
     case _ => throw new Error("Interpreter Error: Not a Boolean")
   }
 
+  def asByte(value: Any): Byte = value match {
+    case _: Byte => value.asInstanceOf[Byte]
+    case _ => throw new Error("Interpreter Error: Not a Byte")
+  }
+
+  def asShort(value: Any): Short = value match {
+    case _: Short => value.asInstanceOf[Short]
+    case _ => throw new Error("Interpreter Error: Not a Short")
+  }
+
   def asInt(value: Any): Int = value match {
     case _: Int => value.asInstanceOf[Int]
     case _ => throw new Error("Interpreter Error: Not an Int")
@@ -41,10 +51,12 @@ object Types {
 
   def asLong(value: Any): LongInstance = value match {
     case _: LongInstance => value.asInstanceOf[LongInstance]
-    case _: Byte => new LongInstance(value.asInstanceOf[Byte].longValue())
-    case _: Short => new LongInstance(value.asInstanceOf[Short].longValue())
-    case _: Int => new LongInstance(value.asInstanceOf[Int].longValue())
     case _ => throw new Error(s"Interpreter Error: Not a Long but ${js.typeOf(value)}")
+  }
+
+  def asChar(value: Any): CharInstance = value match {
+    case _: CharInstance => value.asInstanceOf[CharInstance]
+    case _ => throw new Error(s"Interpreter Error: Not a Char but ${js.typeOf(value)}")
   }
 
   def asFloat(value: Any): Float = value match {
