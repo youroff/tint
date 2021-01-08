@@ -17,9 +17,11 @@ import Types.TypeOps
 
 class Executor(val classManager: ClassManager) {
   val jsClasses: mutable.Map[ClassName, js.Dynamic] = mutable.Map()
+  val jsModules: mutable.Map[ClassName, js.Any] = mutable.Map()
   val names = new utils.NameGen()
   implicit val pos = NoPosition
   implicit val isSubclass = classManager.isSubclassOf(_, _)
+  val fieldsSymbol = js.Symbol("fields")
 
   def execute(program: Tree): Unit = {
     eval(program)(Env.empty)
@@ -63,6 +65,11 @@ class Executor(val classManager: ClassManager) {
       val obj = eval(receiver).asInstanceOf[RawJSValue]
       val idx = eval(prop)
       obj.jsPropertyGet(idx)
+
+    case JSPrivateSelect(qualifier, className, field) =>
+      val obj = eval(qualifier).asInstanceOf[RawJSValue]
+      val fields = obj.jsPropertyGet(fieldsSymbol).asInstanceOf[Instance]
+      fields.getField((className, field.name))
 
     case JSSuperSelect(superClass, receiver, item) =>
       val clazz = eval(superClass).asInstanceOf[js.Dynamic]
@@ -205,6 +212,11 @@ class Executor(val classManager: ClassManager) {
     case JSArrayConstr(items) =>
       js.Array(evalSpread(items): _*)
 
+    case LoadJSModule(className) =>
+      jsModules.getOrElseUpdate(className, {
+        eval(JSNew(LoadJSConstructor(className), List()))
+      })
+
     case LoadJSConstructor(className) =>
       loadJSConstructor(className)
 
@@ -304,6 +316,11 @@ class Executor(val classManager: ClassManager) {
     case JSSelect(target, prop) =>
       val obj = eval(target).asInstanceOf[RawJSValue]
       obj.jsPropertySet(eval(prop), value)
+    
+    case JSPrivateSelect(qualifier, className, field) =>
+      val obj = eval(qualifier).asInstanceOf[RawJSValue]
+      val fields = obj.jsPropertyGet(fieldsSymbol).asInstanceOf[Instance]
+      fields.setField((className, field.name), value)
 
     case JSSuperSelect(superClass, receiver, item) =>
       val clazz = eval(superClass).asInstanceOf[js.Dynamic]
@@ -344,7 +361,7 @@ class Executor(val classManager: ClassManager) {
     (thiz) => eval(t)(env.setThis(thiz))
 
   def evalSetter(t: (ParamDef, Tree))(implicit env: Env): js.ThisFunction1[js.Any, js.Any, js.Any] =
-    (thiz: js.Any, arg: js.Any) => eval(t._2)(env.bind(t._1.name.name, arg).setThis(thiz))
+    (thiz, arg) => eval(t._2)(env.bind(t._1.name.name, arg).setThis(thiz))
 
   def evalPropertyDescriptor(desc: JSPropertyDef)(implicit env: Env): js.PropertyDescriptor = {
     js.Dynamic.literal(
@@ -356,13 +373,13 @@ class Executor(val classManager: ClassManager) {
   def loadJSConstructor(className: ClassName): js.Any = {
     val classDef = classManager.lookupClassDef(className)
     classDef.kind match {
-      case NativeJSClass => classDef.jsNativeLoadSpec.get match {
+      case NativeJSClass | NativeJSModuleClass => classDef.jsNativeLoadSpec.get match {
         case Global(ref, path) =>
           eval(JSGlobalRef((path :+ ref).mkString(".")))(Env.empty)
         case _ =>
           throw new AssertionError("Imports are currently not supported")
       }
-      case JSClass => initJSClass(className)
+      case JSClass | JSModuleClass => initJSClass(className)
       case classKind =>
         throw new AssertionError(s"Unsupported LoadJSConstructor for $classKind")
     }
@@ -378,31 +395,31 @@ class Executor(val classManager: ClassManager) {
     case null =>
       false
     case _: Boolean =>
-      BooleanType < t
+      BooleanType <:< t
     case _: Byte =>
-      ByteType < t || ShortType < t || IntType < t || FloatType < t || DoubleType < t
+      ByteType <:< t || ShortType <:< t || IntType <:< t || FloatType <:< t || DoubleType <:< t
     case _: Short =>
-      ShortType < t || IntType < t || FloatType < t || DoubleType < t
+      ShortType <:< t || IntType <:< t || FloatType <:< t || DoubleType <:< t
     case _: Int =>
-      IntType < t || FloatType < t || DoubleType < t
+      IntType <:< t || FloatType <:< t || DoubleType <:< t
     case _: Float =>
-      FloatType < t || DoubleType < t
+      FloatType <:< t || DoubleType <:< t
     case _: Double =>
-      DoubleType < t
+      DoubleType <:< t
     case _: String =>
-      StringType < t
+      StringType <:< t
     case () =>
-      UndefType < t
+      UndefType <:< t
     case _: LongInstance =>
-      LongType < t
+      LongType <:< t
     case _: CharInstance =>
-      CharType < t
+      CharType <:< t
     case value: Instance =>
-      ClassType(value.className) < t
+      ClassType(value.className) <:< t
     case array: ArrayInstance =>
-      ArrayType(array.typeRef) < t
+      ArrayType(array.typeRef) <:< t
     case _ =>
-      ClassType(ObjectClass) < t
+      ClassType(ObjectClass) <:< t
   }
 
   /** Split constructor body into prelude, args tree and epilog
@@ -499,22 +516,26 @@ class Executor(val classManager: ClassManager) {
       case descriptor @ JSPropertyDef(_, name, _, _) =>
         val prop = eval(name).asInstanceOf[String]
         val desc = evalPropertyDescriptor(descriptor)
-        js.Object.defineProperty(this.asInstanceOf[js.Object], prop, desc)
+        js.Object.defineProperty(dynamic.asInstanceOf[js.Object], prop, desc)
     }
 
   def attachFields(obj: js.Object, linkedClass: LinkedClass)(implicit env: Env) = {
+    val fieldContainer = if (linkedClass.fields.exists(_.isInstanceOf[FieldDef])) {
+      val instance = new Instance(ObjectClass)
+      val descriptor = Descriptor.make(false, false, false, instance)
+      Descriptor.ObjectExtensions.defineProperty(obj, fieldsSymbol, descriptor)
+      Some(instance)
+    } else {
+      None
+    }
+
     linkedClass.fields.foreach {
-      case JSFieldDef(flags, StringLiteral(field), tpe) =>
+      case JSFieldDef(flags, name, tpe) =>
+        val field = eval(name).asInstanceOf[String]
         val descriptor = Descriptor.make(true, true, true, Types.zeroOf(tpe))
         js.Object.defineProperty(obj, field, descriptor)
       case FieldDef(flags, FieldIdent(fieldName), originalName, tpe) =>
-        // val descriptor = js.Dynamic.literal(
-        //   configurable = true,
-        //   enumerable = true,
-        //   writable = true,
-        //   value = Types.zeroOf(tpe)
-        // ).asInstanceOf[js.PropertyDescriptor]
-        // js.Object.defineProperty(obj, fieldName.toLocalName.nameString, descriptor)
+        fieldContainer.foreach(_.setField((linkedClass.className, fieldName), Types.zeroOf(tpe)))
       case smth =>
         throw new Exception(s"Unexpected kind of field: $smth")  
     }

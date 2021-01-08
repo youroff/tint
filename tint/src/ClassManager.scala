@@ -64,18 +64,12 @@ class ClassManager(val classes: Map[ClassName, LinkedClass]) {
 
   def genTypeData(className: ClassName): js.Any = {
     val classDef = lookupClassDef(className)
-    val args = js.Array[js.Any](
-      js.special.objectLiteral((names.genName(className), 0)),
-      classDef.kind == Interface,
-      classDef.fullName, // Something else needed here?
-      js.special.objectLiteral(
-        classDef.ancestors
-          .map(names.genName)
-          .map((_, 1)): _*
-      )
+    js.Dynamic.literal(
+      name = classDef.fullName,
+      isPrimitive = false,
+      isInterface = classDef.kind == Interface,
+      isArrayClass = false
     )
-    new js.Function("args", "return new $TypeData().initClass(...args);")
-      .asInstanceOf[js.Function1[js.Array[js.Any], js.Any]](args)
   }
 
   def getStaticField(key: (ClassName, FieldName)): js.Any = 

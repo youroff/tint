@@ -2,6 +2,7 @@ package tint
 package js
 
 import scala.scalajs.js
+import scala.scalajs.js.annotation.JSGlobal
 
 object Descriptor {
 
@@ -27,5 +28,11 @@ object Descriptor {
       superProto = js.Object.getPrototypeOf(superProto)
     }
     None
+  }
+
+  @js.native
+  @JSGlobal("Object")
+  object ObjectExtensions extends js.Any {
+    def defineProperty(obj: js.Object, prop: js.Symbol, desc: js.PropertyDescriptor): js.Object = js.native
   }
 }

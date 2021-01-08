@@ -13,6 +13,12 @@ class Square(val side: Int) extends Rect(side, side) {
   def getSuperWidth = super.getWidth
 }
 
+object Computer extends js.Object {
+  def computeSquareArea(side: Int): Int = {
+    new Square(side).area
+  }
+}
+
 object SampleWithJSClasses {
   def run(args: Array[String]): Unit = {
     val square = new Square(5)
@@ -20,5 +26,6 @@ object SampleWithJSClasses {
     val lambda = (x: Int) => x * result
     println("Lambda says " + lambda(2))
     println(s"Hello world! $result ${square.getSuperWidth} ${square.multWidth(2)}")
+    println(s"Cumputer.computeSquareArea of 3: ${Computer.computeSquareArea(3)}")
   }
 }

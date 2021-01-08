@@ -148,7 +148,6 @@ object TypesTests extends TestSuite{
         DoubleType -> true,
         BooleanType -> false
       ))
-
     }
   }
 }

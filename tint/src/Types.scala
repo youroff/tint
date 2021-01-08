@@ -7,7 +7,7 @@ import org.scalajs.ir.Names.ClassName
 object Types {
 
   implicit class TypeOps(val value: Type) extends AnyVal {  
-    def <(other: Type)(implicit isSubclass: (ClassName, ClassName) => Boolean): Boolean =
+    def <:<(other: Type)(implicit isSubclass: (ClassName, ClassName) => Boolean): Boolean =
       isSubtype(value, other)(isSubclass)
   }
 
