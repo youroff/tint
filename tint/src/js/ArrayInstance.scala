@@ -7,7 +7,7 @@ import org.scalajs.ir.Trees._
 import org.scalajs.ir.Types._
 import scala.scalajs.js.annotation.JSName
 
-class ArrayInstance(typeRef: ArrayTypeRef, lengths: List[Int]) extends js.Object {
+class ArrayInstance(val typeRef: ArrayTypeRef, lengths: List[Int]) extends js.Object {
   require(typeRef.dimensions >= lengths.size && lengths.size > 0, "dimensions don't match")
   
   val array = new Array[js.Any](lengths.head)

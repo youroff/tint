@@ -2,8 +2,14 @@ package tint
 
 import scala.scalajs.js
 import org.scalajs.ir.Types._
+import org.scalajs.ir.Names.ClassName
 
 object Types {
+
+  implicit class TypeOps(val value: Type) extends AnyVal {  
+    def <(other: Type)(implicit isSubclass: (ClassName, ClassName) => Boolean): Boolean =
+      isSubtype(value, other)(isSubclass)
+  }
 
   def zeroOf(tpe: Type): js.Any = tpe match {
     case BooleanType => false

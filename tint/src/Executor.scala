@@ -13,11 +13,13 @@ import org.scalajs.ir.Trees.JSNativeLoadSpec.Global
 import tint.utils.Utils.OptionsOps
 import tint.ops._
 import tint.js._
+import Types.TypeOps
 
 class Executor(val classManager: ClassManager) {
   val jsClasses: mutable.Map[ClassName, js.Dynamic] = mutable.Map()
   val names = new utils.NameGen()
   implicit val pos = NoPosition
+  implicit val isSubclass = classManager.isSubclassOf(_, _)
 
   def execute(program: Tree): Unit = {
     eval(program)(Env.empty)
@@ -28,9 +30,12 @@ class Executor(val classManager: ClassManager) {
     case Skip() => ()
     case StringLiteral(value) => value
     case CharLiteral(value) => new CharInstance(value)
+    case ByteLiteral(value) => value.byteValue()
+    case ShortLiteral(value) => value.shortValue()
     case IntLiteral(value) => value.intValue()
     case LongLiteral(value) => new LongInstance(value)
     case DoubleLiteral(value) => value.doubleValue()
+    case FloatLiteral(value) => value.floatValue()
     case BooleanLiteral(value) => value.booleanValue()
     case Null() => null
     case Undefined() => js.undefined
@@ -363,20 +368,41 @@ class Executor(val classManager: ClassManager) {
     }
   }
 
-  def evalAsInstanceOf(value: js.Any, tpe: Type)(implicit env: Env): js.Any = tpe match {
-    case ClassType(BoxedStringClass) => value.asInstanceOf[String]
-    case BooleanType => value.asInstanceOf[Boolean]
-    case IntType => value.asInstanceOf[Int]
-    case _ => value
-  } 
+  def evalAsInstanceOf(value: js.Any, tpe: Type)(implicit env: Env): js.Any = value match {
+    case null => Types.zeroOf(tpe)
+    case x if evalIsInstanceOf(x, tpe) => x
+    case _ => throw new ClassCastException()
+  }
 
-  def evalIsInstanceOf(value: js.Any, tpe: Type): js.Any = (value, tpe) match {
-    case (instance: Instance, ClassType(ObjectClass)) => true
-    case (instance: Instance, ClassType(className)) =>
-      classManager.isSubclassOf(instance.className, className)
-    case (_, AnyType) => true
+  def evalIsInstanceOf(value: js.Any, t: Type): Boolean = (value: Any) match {
+    case null =>
+      false
+    case _: Boolean =>
+      BooleanType < t
+    case _: Byte =>
+      ByteType < t || ShortType < t || IntType < t || FloatType < t || DoubleType < t
+    case _: Short =>
+      ShortType < t || IntType < t || FloatType < t || DoubleType < t
+    case _: Int =>
+      IntType < t || FloatType < t || DoubleType < t
+    case _: Float =>
+      FloatType < t || DoubleType < t
+    case _: Double =>
+      DoubleType < t
+    case _: String =>
+      StringType < t
+    case () =>
+      UndefType < t
+    case _: LongInstance =>
+      LongType < t
+    case _: CharInstance =>
+      CharType < t
+    case value: Instance =>
+      ClassType(value.className) < t
+    case array: ArrayInstance =>
+      ArrayType(array.typeRef) < t
     case _ =>
-      unimplemented((value, tpe), "instanceOf")
+      ClassType(ObjectClass) < t
   }
 
   /** Split constructor body into prelude, args tree and epilog
@@ -476,7 +502,7 @@ class Executor(val classManager: ClassManager) {
         js.Object.defineProperty(this.asInstanceOf[js.Object], prop, desc)
     }
 
-  def attachFields(obj: js.Object, linkedClass: LinkedClass)(implicit env: Env) =
+  def attachFields(obj: js.Object, linkedClass: LinkedClass)(implicit env: Env) = {
     linkedClass.fields.foreach {
       case JSFieldDef(flags, StringLiteral(field), tpe) =>
         val descriptor = Descriptor.make(true, true, true, Types.zeroOf(tpe))
@@ -492,6 +518,7 @@ class Executor(val classManager: ClassManager) {
       case smth =>
         throw new Exception(s"Unexpected kind of field: $smth")  
     }
+  }
 
   def unimplemented(t: Any, site: String = "default") = {
     println(s"Unimplemented $t")
