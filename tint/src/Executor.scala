@@ -27,254 +27,263 @@ class Executor(val classManager: ClassManager) {
     eval(program)(Env.empty)
   }
 
-  def eval(program: Tree)(implicit env: Env): js.Any = program match {
-    case Block(trees) => evalStmts(trees)._1
-    case Skip() => ()
-    case StringLiteral(value) => value
-    case CharLiteral(value) => new CharInstance(value)
-    case ByteLiteral(value) => value.byteValue()
-    case ShortLiteral(value) => value.shortValue()
-    case IntLiteral(value) => value.intValue()
-    case LongLiteral(value) => new LongInstance(value)
-    case DoubleLiteral(value) => value.doubleValue()
-    case FloatLiteral(value) => value.floatValue()
-    case BooleanLiteral(value) => value.booleanValue()
-    case Null() => null
-    case Undefined() => js.undefined
-    case ArrayValue(typeRef, value) => ArrayInstance.fromList(typeRef, value map eval)
-    case This() => env.getThis
-    case VarRef(LocalIdent(name)) => env.read(name)
+  def eval(program: Tree)(implicit env: Env): js.Any = try {
+    program match {
+      case Block(trees) => evalStmts(trees)._1
+      case Skip() => ()
+      case StringLiteral(value) => value
+      case CharLiteral(value) => new CharInstance(value)
+      case ByteLiteral(value) => value.byteValue()
+      case ShortLiteral(value) => value.shortValue()
+      case IntLiteral(value) => value.intValue()
+      case LongLiteral(value) => new LongInstance(value)
+      case DoubleLiteral(value) => value.doubleValue()
+      case FloatLiteral(value) => value.floatValue()
+      case BooleanLiteral(value) => value.booleanValue()
+      case Null() => null
+      case Undefined() => js.undefined
+      case ArrayValue(typeRef, value) => ArrayInstance.fromList(typeRef, value map eval)
+      case This() => env.getThis
+      case VarRef(LocalIdent(name)) => env.read(name)
 
-    case JSLinkingInfo() => scala.scalajs.runtime.linkingInfo
+      case JSLinkingInfo() => scala.scalajs.runtime.linkingInfo
 
-    case Select(tree, className, field) => eval(tree) match {
-      case instance: Instance =>
-        instance.getField((className, field.name))
-      case rest => unimplemented(rest, "Select")
-    }
-
-    case SelectStatic(className, FieldIdent(fieldName)) =>
-      classManager.getStaticField((className, fieldName))
-
-    case ArraySelect(array, index) =>
-      val instance = eval(array).asInstanceOf[ArrayInstance]
-      val i = eval(index).asInstanceOf[Int]
-      instance(i)
-
-    case JSSelect(receiver, prop) =>
-      val obj = eval(receiver).asInstanceOf[RawJSValue]
-      val idx = eval(prop)
-      obj.jsPropertyGet(idx)
-
-    case JSPrivateSelect(qualifier, className, field) =>
-      val obj = eval(qualifier).asInstanceOf[RawJSValue]
-      val fields = obj.jsPropertyGet(fieldsSymbol).asInstanceOf[Instance]
-      fields.getField((className, field.name))
-
-    case JSSuperSelect(superClass, receiver, item) =>
-      val clazz = eval(superClass).asInstanceOf[js.Dynamic]
-      val propName = eval(item).asInstanceOf[String]
-      val propDesc = Descriptor.resolve(clazz, propName)
-        .getOrThrow(s"Cannot resolve super property $propName on $clazz")
-      if (propDesc.get.isDefined) {
-        propDesc.get.get.call(eval(receiver))
-      } else {
-        propDesc.value.get.asInstanceOf[js.Any]
+      case Select(tree, className, field) => eval(tree) match {
+        case instance: Instance =>
+          instance.getField((className, field.name))
+        case rest => unimplemented(rest, "Select")
       }
 
-    case Apply(flags, receiver, method, args) =>
-      val instance = eval(receiver)
-      val className: ClassName = (instance: Any) match {
-        case instance: Instance => instance.className
-        case _: String => BoxedStringClass
-        case rest =>
-          unimplemented(rest, s"Apply className resolution")
-      }
-      val methodDef = classManager.lookupMethodDef(className, method.name, MemberNamespace.Public)
-      val eargs = evalArgs(methodDef.args, args)
-      eval(methodDef.body.get)(Env.empty.bind(eargs).setThis(instance))
+      case SelectStatic(className, FieldIdent(fieldName)) =>
+        classManager.getStaticField((className, fieldName))
 
-    case ApplyStatically(flags, tree, className, methodIdent, args) => eval(tree) match {
-      case instance: Instance =>
-        val nspace = MemberNamespace.forNonStaticCall(flags)
-        val methodDef = classManager.lookupMethodDef(className, methodIdent.name, nspace)
-        val eargs = evalArgs(methodDef.args, args)
-        eval(methodDef.body.get)(Env.empty.bind(eargs).setThis(instance))
-      case rest => unimplemented(rest, "ApplyStatically")
-    }
+      case ArraySelect(array, index) =>
+        val instance = eval(array).asInstanceOf[ArrayInstance]
+        val i = eval(index).asInstanceOf[Int]
+        instance(i)
 
-    case ApplyStatic(flags, className, methodIdent, args) =>
-      val nspace = MemberNamespace.forStaticCall(flags)
-      val methodDef = classManager.lookupMethodDef(className, methodIdent.name, nspace)
-      val eargs = evalArgs(methodDef.args, args)
-      eval(methodDef.body.get)(Env.empty.bind(eargs))
+      case JSSelect(receiver, prop) =>
+        val obj = eval(receiver).asInstanceOf[RawJSValue]
+        val idx = eval(prop)
+        obj.jsPropertyGet(idx)
 
-    case New(className, ctor, args) =>
-      val instance = new Instance(className)
-      classManager.superChain(className) { linkedClass =>
-        linkedClass.fields.foreach {
-          case FieldDef(_, FieldIdent(fieldName), _, tpe) =>
-            instance.setField((linkedClass.className, fieldName), Types.zeroOf(tpe))
-          case JSFieldDef(flags, name, ftpe) =>
-            throw new AssertionError("Trying to init JSField on a Scala class")
+      case JSPrivateSelect(qualifier, className, field) =>
+        val obj = eval(qualifier).asInstanceOf[RawJSValue]
+        val fields = obj.jsPropertyGet(fieldsSymbol).asInstanceOf[Instance]
+        fields.getField((className, field.name))
+
+      case JSSuperSelect(superClass, receiver, item) =>
+        val clazz = eval(superClass).asInstanceOf[js.Dynamic]
+        val propName = eval(item).asInstanceOf[String]
+        val propDesc = Descriptor.resolve(clazz, propName)
+          .getOrThrow(s"Cannot resolve super property $propName on $clazz")
+        if (propDesc.get.isDefined) {
+          propDesc.get.get.call(eval(receiver))
+        } else {
+          propDesc.value.get.asInstanceOf[js.Any]
         }
 
-        attachExportedMembers(instance.asInstanceOf[js.Dynamic], linkedClass)
+      case Apply(flags, receiver, method, args) =>
+        val instance = eval(receiver)
+        val className: ClassName = (instance: Any) match {
+          case instance: Instance => instance.className
+          case _: String => BoxedStringClass
+          case rest =>
+            unimplemented(rest, s"Apply className resolution")
+        }
+        val methodDef = classManager.lookupMethodDef(className, method.name, MemberNamespace.Public)
+        val eargs = evalArgs(methodDef.args, args)
+        eval(methodDef.body.get)(Env.empty.bind(eargs).setThis(instance))
+
+      case ApplyStatically(flags, tree, className, methodIdent, args) => eval(tree) match {
+        case instance: Instance =>
+          val nspace = MemberNamespace.forNonStaticCall(flags)
+          val methodDef = classManager.lookupMethodDef(className, methodIdent.name, nspace)
+          val eargs = evalArgs(methodDef.args, args)
+          eval(methodDef.body.get)(Env.empty.bind(eargs).setThis(instance))
+        case rest => unimplemented(rest, "ApplyStatically")
       }
 
-      val ctorDef = classManager.lookupMethodDef(className, ctor.name, MemberNamespace.Constructor)
-      val eargs = evalArgs(ctorDef.args, args)
-      eval(ctorDef.body.get)(Env.empty.bind(eargs).setThis(instance))
-      instance
+      case ApplyStatic(flags, className, methodIdent, args) =>
+        val nspace = MemberNamespace.forStaticCall(flags)
+        val methodDef = classManager.lookupMethodDef(className, methodIdent.name, nspace)
+        val eargs = evalArgs(methodDef.args, args)
+        eval(methodDef.body.get)(Env.empty.bind(eargs))
 
-    case LoadModule(name) => classManager.loadModule(name, {
-      eval(New(name, MethodIdent(NoArgConstructorName), List())).asInstanceOf[Instance]
-    })
+      case New(className, ctor, args) =>
+        val instance = new Instance(className)
+        classManager.superChain(className) { linkedClass =>
+          linkedClass.fields.foreach {
+            case FieldDef(_, FieldIdent(fieldName), _, tpe) =>
+              instance.setField((linkedClass.className, fieldName), Types.zeroOf(tpe))
+            case JSFieldDef(flags, name, ftpe) =>
+              throw new AssertionError("Trying to init JSField on a Scala class")
+          }
 
-    case StoreModule(name, tree) =>
-      classManager.storeModule(name, eval(tree).asInstanceOf[Instance])
+          attachExportedMembers(instance.asInstanceOf[js.Dynamic], linkedClass)
+        }
 
-    case Assign(lhs, rhs) => evalAssign(lhs, eval(rhs))
+        val ctorDef = classManager.lookupMethodDef(className, ctor.name, MemberNamespace.Constructor)
+        val eargs = evalArgs(ctorDef.args, args)
+        eval(ctorDef.body.get)(Env.empty.bind(eargs).setThis(instance))
+        instance
 
-    case TryCatch(block, err, _, handler) => try {
-      eval(block)
-    } catch {
-      case js.JavaScriptException(e) =>
-        eval(handler)(env.bind(err.name, e.asInstanceOf[js.Any]))
-    }
-
-    case TryFinally(block, finalizer) => try {
-      eval(block)
-    } finally {
-      eval(finalizer)
-    }
-
-    case Throw(e) =>
-      new js.Function("e", "throw e;").asInstanceOf[js.Function1[js.Any, js.Any]](eval(e))
-
-    case If(cond, thenp, elsep) =>
-      if (Types.asBoolean(eval(cond))) eval(thenp) else eval(elsep)
-
-    case While(cond, body) =>
-      while (Types.asBoolean(eval(cond))) eval(body)
-
-    case DoWhile(body, cond) =>
-      do { eval(body) } while (Types.asBoolean(eval(cond)))
-
-    case ForIn(obj, key, _, body) =>
-      js.special.forin(eval(obj)) { (arg) =>
-        eval(body)(env.bind(key.name, arg.asInstanceOf[js.Any]))
-      }
-
-    case Match(selector, cases, default) =>
-      val alt = Types.asInt(eval(selector))
-      val exp = cases.find {
-        case (alts, _) => alts.contains(IntLiteral(alt))
-      }.map(_._2).getOrElse(default)
-      eval(exp)
-
-    case Debugger() =>
-      throw new AssertionError("Trying to debug undebuggable? :)")
-
-    case Closure(true, captureParams, params, body, captureValues) =>
-      evalJsClosure(params, body)(Env.empty.bind(evalArgs(captureParams, captureValues)))
-
-    case Closure(false, captureParams, params, body, captureValues) =>
-      evalJsFunction(params, body)(Env.empty.bind(evalArgs(captureParams, captureValues)))
-
-    case JSObjectConstr(props) =>
-      val inits = props.map {
-        case (k, v) => (eval(k), eval(v))
-      }
-      js.special.objectLiteral(inits: _*)
-
-    case JSDelete(qualifier, item) =>
-      js.special.delete(eval(qualifier), eval(item))
-
-    case JSFunctionApply(fun, args) =>
-      eval(fun).asInstanceOf[js.Function].call(js.undefined, evalSpread(args): _*)
-
-    case JSMethodApply(receiver, method, args) =>
-      val obj = eval(receiver).asInstanceOf[RawJSValue]
-      obj.jsMethodApply(eval(method))(evalSpread(args): _*)
-
-    case JSGlobalRef(name) =>
-      js.eval(name).asInstanceOf[js.Any]
-
-    case JSTypeOfGlobalRef(JSGlobalRef(name)) =>
-      js.eval(s"typeof $name").asInstanceOf[String]
-
-    case JSNew(ctor, args) =>
-      new js.Function("clazz", "args", s"return new clazz(...args);")
-        .asInstanceOf[js.Function2[js.Any, js.Array[_], js.Any]]
-        .apply(eval(ctor), js.Array(evalSpread(args): _*))
-
-    case JSArrayConstr(items) =>
-      js.Array(evalSpread(items): _*)
-
-    case LoadJSModule(className) =>
-      jsModules.getOrElseUpdate(className, {
-        eval(JSNew(LoadJSConstructor(className), List()))
+      case LoadModule(name) => classManager.loadModule(name, {
+        eval(New(name, MethodIdent(NoArgConstructorName), List())).asInstanceOf[Instance]
       })
 
-    case LoadJSConstructor(className) =>
-      loadJSConstructor(className)
+      case StoreModule(name, tree) =>
+        classManager.storeModule(name, eval(tree).asInstanceOf[Instance])
 
-    case CreateJSClass(className, captureValues) =>
-      createJSClass(className, captureValues, env)
+      case Assign(lhs, rhs) => evalAssign(lhs, eval(rhs))
 
-    case JSSuperConstructorCall(_) =>
-      throw new AssertionError("JSSuperConstructorCall should never be called in eval loop")
+      case TryCatch(block, err, _, handler) => try {
+        eval(block)
+      } catch {
+        case js.JavaScriptException(e) =>
+          eval(handler)(env.bind(err.name, e.asInstanceOf[js.Any]))
+      }
 
-    case NewArray(typeRef, lengths) =>
-      new ArrayInstance(typeRef, (lengths map eval).asInstanceOf[List[Int]])
+      case TryFinally(block, finalizer) => try {
+        eval(block)
+      } finally {
+        eval(finalizer)
+      }
 
-    case ArrayLength(array) =>
-      eval(array).asInstanceOf[ArrayInstance].length
+      case Throw(e) =>
+        new js.Function("e", "throw e;").asInstanceOf[js.Function1[js.Any, js.Any]](eval(e))
 
-    case AsInstanceOf(tree, tpe) =>
-      evalAsInstanceOf(eval(tree), tpe)
+      case If(cond, thenp, elsep) =>
+        if (Types.asBoolean(eval(cond))) eval(thenp) else eval(elsep)
 
-    case IsInstanceOf(expr, tpe) =>
-      evalIsInstanceOf(eval(expr), tpe)
+      case While(cond, body) =>
+        while (Types.asBoolean(eval(cond))) eval(body)
 
-    case GetClass(e) => eval(e) match {
-      case instance: Instance => eval(ClassOf(ClassRef(instance.className)))
-      case _ => null
+      case DoWhile(body, cond) =>
+        do { eval(body) } while (Types.asBoolean(eval(cond)))
+
+      case ForIn(obj, key, _, body) =>
+        js.special.forin(eval(obj)) { (arg) =>
+          eval(body)(env.bind(key.name, arg.asInstanceOf[js.Any]))
+        }
+
+      case Match(selector, cases, default) =>
+        val alt = Types.asInt(eval(selector))
+        val exp = cases.find {
+          case (alts, _) => alts.contains(IntLiteral(alt))
+        }.map(_._2).getOrElse(default)
+        eval(exp)
+
+      case Debugger() =>
+        throw new AssertionError("Trying to debug undebuggable? :)")
+
+      case Closure(true, captureParams, params, body, captureValues) =>
+        evalJsClosure(params, body)(Env.empty.bind(evalArgs(captureParams, captureValues)))
+
+      case Closure(false, captureParams, params, body, captureValues) =>
+        evalJsFunction(params, body)(Env.empty.bind(evalArgs(captureParams, captureValues)))
+
+      case JSObjectConstr(props) =>
+        val inits = props.map {
+          case (k, v) => (eval(k), eval(v))
+        }
+        js.special.objectLiteral(inits: _*)
+
+      case JSDelete(qualifier, item) =>
+        js.special.delete(eval(qualifier), eval(item))
+
+      case JSFunctionApply(fun, args) =>
+        eval(fun).asInstanceOf[js.Function].call(js.undefined, evalSpread(args): _*)
+
+      case JSMethodApply(receiver, method, args) =>
+        val obj = eval(receiver).asInstanceOf[RawJSValue]
+        obj.jsMethodApply(eval(method))(evalSpread(args): _*)
+
+      case JSGlobalRef(name) =>
+        js.eval(name).asInstanceOf[js.Any]
+
+      case JSTypeOfGlobalRef(JSGlobalRef(name)) =>
+        js.eval(s"typeof $name").asInstanceOf[String]
+
+      case JSNew(ctor, args) =>
+        new js.Function("clazz", "args", s"return new clazz(...args);")
+          .asInstanceOf[js.Function2[js.Any, js.Array[_], js.Any]]
+          .apply(eval(ctor), js.Array(evalSpread(args): _*))
+
+      case JSArrayConstr(items) =>
+        js.Array(evalSpread(items): _*)
+
+      case LoadJSModule(className) =>
+        jsModules.getOrElseUpdate(className, {
+          eval(JSNew(LoadJSConstructor(className), List()))
+        })
+
+      case LoadJSConstructor(className) =>
+        loadJSConstructor(className)
+
+      case CreateJSClass(className, captureValues) =>
+        createJSClass(className, captureValues, env)
+
+      case JSSuperConstructorCall(_) =>
+        throw new AssertionError("JSSuperConstructorCall should never be called in eval loop")
+
+      case NewArray(typeRef, lengths) =>
+        new ArrayInstance(typeRef, (lengths map eval).asInstanceOf[List[Int]])
+
+      case ArrayLength(array) =>
+        eval(array).asInstanceOf[ArrayInstance].length
+
+      case AsInstanceOf(tree, tpe) =>
+        evalAsInstanceOf(eval(tree), tpe)
+
+      case IsInstanceOf(expr, tpe) =>
+        evalIsInstanceOf(eval(expr), tpe)
+
+      case GetClass(e) => eval(e) match {
+        case instance: Instance =>
+          eval(ClassOf(ClassRef(instance.className)))
+        case array: ArrayInstance =>
+          eval(ClassOf(array.typeRef))
+        case _ => null
+      }
+
+      case ClassOf(typeRef) => 
+        classManager.lookupClassInstance(typeRef, {
+          val tmp = LocalName("dataTmp")
+          eval(New(
+            ClassClass,
+            MethodIdent(MethodName(ConstructorSimpleName, List(ClassRef(ObjectClass)), VoidRef)),
+            List(VarRef(LocalIdent(tmp))(AnyType))
+          ))(Env.empty.bind(tmp, classManager.genTypeData(typeRef))).asInstanceOf[Instance]
+        })
+
+      case IdentityHashCode(expr) =>
+        scala.scalajs.runtime.identityHashCode(eval(expr))
+
+      case Labeled(label, _, body) => try {
+        eval(body)
+      } catch {
+        case LabelException(retLabel, value) if label == retLabel =>
+          value
+      }
+
+      case Return(expr, label) =>
+        throw LabelException(label, eval(expr))
+
+      case BinaryOp(op, l, r) => BinaryOps(op, eval(l), eval(r))
+      case UnaryOp(op, t) => UnaryOps(op, eval(t))
+      case JSBinaryOp(op, l, r) => JSBinaryOps(op, eval(l), eval(r))
+      case JSUnaryOp(op, t) => JSUnaryOps(op, eval(t))
+
+      case rest =>
+        unimplemented(rest, "root")
     }
-
-    case ClassOf(ClassRef(className)) =>
-      classManager.lookupClassInstance(className, {
-        val tmp = LocalName("dataTmp")
-        eval(New(
-          ClassClass,
-          MethodIdent(MethodName(ConstructorSimpleName, List(ClassRef(ObjectClass)), VoidRef)),
-          List(VarRef(LocalIdent(tmp))(AnyType))
-        ))(Env.empty.bind(tmp, classManager.genTypeData(className))).asInstanceOf[Instance]
-      })
-
-    case IdentityHashCode(expr) =>
-      scala.scalajs.runtime.identityHashCode(eval(expr))
-
-    case Labeled(label, _, body) => try {
-      eval(body)
-    } catch {
-      case LabelException(retLabel, value) if label == retLabel =>
-        value
-    }
-
-    case Return(expr, label) =>
-      throw LabelException(label, eval(expr))
-
-    case BinaryOp(op, l, r) => BinaryOps(op, eval(l), eval(r))
-    case UnaryOp(op, t) => UnaryOps(op, eval(t))
-    case JSBinaryOp(op, l, r) => JSBinaryOps(op, eval(l), eval(r))
-    case JSUnaryOp(op, t) => JSUnaryOps(op, eval(t))
-
-    case rest =>
-      unimplemented(rest, "root")
+  } catch {
+    case err @ js.JavaScriptException(e) =>
+      println(s"Crashed with $e")
+      println(program)
+      throw err
   }
-
   def evalArgs(args: List[ParamDef], values: List[Tree])(implicit env: Env): Map[LocalName, js.Any] = {
     args.map(_.name.name).zip(values map eval).toMap
   }

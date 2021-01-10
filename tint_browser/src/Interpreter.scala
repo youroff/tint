@@ -5,9 +5,10 @@ import scala.scalajs.js
 import js.annotation._
 import scala.concurrent.ExecutionContext.Implicits.global
 import org.scalajs.linker.interface.ModuleInitializer
+import org.scalajs.ir.Names._
 import org.scalajs.ir.Trees._
-import org.scalajs.ir.Position
 import org.scalajs.ir.Types._
+import org.scalajs.ir.Position
 import org.scalajs.linker.interface.unstable.ModuleInitializerImpl._
 
 @JSExportTopLevel("Interpreter")
@@ -30,8 +31,9 @@ class Interpreter(
       implicit val pos = Position.NoPosition
       moduleSet.modules.foreach { module =>
         module.initializers.foreach {
-          case MainMethodWithArgs(className, methodName, _) =>
-            val tree = ApplyStatic(ApplyFlags.empty, className, MethodIdent(methodName), List())(NoType)
+          case MainMethodWithArgs(className, methodName, args) =>
+            val values = List(convertArgs(args))
+            val tree = ApplyStatic(ApplyFlags.empty, className, MethodIdent(methodName), values)(NoType)
             executor.execute(tree)
           case VoidMainMethod(className, methodName) =>
             val tree = ApplyStatic(ApplyFlags.empty, className, MethodIdent(methodName), List())(NoType)
@@ -40,4 +42,9 @@ class Interpreter(
       }
     }
   }
+
+  def convertArgs(args: List[String]): Tree = ArrayValue(
+    ArrayTypeRef.of(ClassRef(ClassName("java.lang.String"))),
+    args map (StringLiteral(_)(Position.NoPosition))
+  )(Position.NoPosition)
 }

@@ -17,6 +17,7 @@ object Linker {
     val frontend = StandardLinkerFrontend(config)
     val backend = StandardLinkerBackend(config)
 
+    println("Starting to link")
     frontend.link(
       irFiles ++ backend.injectedIRFiles,
       Seq(initializer),

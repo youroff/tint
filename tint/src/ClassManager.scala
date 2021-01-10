@@ -5,12 +5,13 @@ import scala.collection.mutable
 import org.scalajs.linker.standard.{ModuleSet, LinkedClass}
 import org.scalajs.ir.Names._
 import org.scalajs.ir.Trees._
+import org.scalajs.ir.Types._
 import tint.utils.Utils.OptionsOps
 import org.scalajs.ir.ClassKind.Interface
 
 class ClassManager(val classes: Map[ClassName, LinkedClass]) {
   val staticFields: mutable.Map[(ClassName, FieldName), js.Any] = mutable.Map()
-  val classInstances: mutable.Map[ClassName, Instance] = mutable.Map()
+  val classInstances: mutable.Map[TypeRef, Instance] = mutable.Map()
   val modules: mutable.Map[ClassName, Instance] = mutable.Map()
   val names = new utils.NameGen()
 
@@ -59,18 +60,56 @@ class ClassManager(val classes: Map[ClassName, LinkedClass]) {
   def storeModule(className: ClassName, instance: Instance) =
     modules.update(className, instance)
 
-  def lookupClassInstance(className: ClassName, orElse: => Instance): Instance =
-    classInstances.getOrElseUpdate(className, orElse)
+  def lookupClassInstance(typeRef: TypeRef, orElse: => Instance): Instance =
+    classInstances.getOrElseUpdate(typeRef, orElse)
 
-  def genTypeData(className: ClassName): js.Any = {
-    val classDef = lookupClassDef(className)
-    js.Dynamic.literal(
-      name = classDef.fullName,
-      isPrimitive = false,
-      isInterface = classDef.kind == Interface,
-      isArrayClass = false
-    )
+  def genTypeData(typeRef: TypeRef): js.Any = typeRef match {
+    case ClassRef(className) => 
+      val classDef = lookupClassDef(className)
+      typeDataLiteral(classDef.fullName, false, classDef.kind == Interface, false)
+    case arrRef @ ArrayTypeRef(_, _) =>
+      typeDataLiteral(genArrayName(arrRef), false, false, true)
+    case PrimRef(NoType) => typeDataLiteral("void", true, false, false)
+    case PrimRef(BooleanType) => typeDataLiteral("boolean", true, false, false)
+    case PrimRef(CharType) => typeDataLiteral("char", true, false, false)
+    case PrimRef(ByteType) => typeDataLiteral("byte", true, false, false)
+    case PrimRef(ShortType) => typeDataLiteral("short", true, false, false)
+    case PrimRef(IntType) => typeDataLiteral("int", true, false, false)
+    case PrimRef(LongType) => typeDataLiteral("long", true, false, false)
+    case PrimRef(FloatType) => typeDataLiteral("float", true, false, false)
+    case PrimRef(DoubleType) => typeDataLiteral("double", true, false, false)
+    case PrimRef(NullType) => typeDataLiteral("scala.runtime.Null$", true, false, false)
+    case PrimRef(NothingType) => typeDataLiteral("scala.runtime.Nothing$", true, false, false)
   }
+
+  def genArrayName(typeRef: TypeRef): String = typeRef match {
+    case PrimRef(tpe) =>
+      tpe match {
+        case NoType      => "V"
+        case BooleanType => "Z"
+        case CharType    => "C"
+        case ByteType    => "B"
+        case ShortType   => "S"
+        case IntType     => "I"
+        case LongType    => "J"
+        case FloatType   => "F"
+        case DoubleType  => "D"
+        case NullType    => "N"
+        case NothingType => "E"
+      }
+    case ClassRef(className) =>
+      "L" + className.nameString
+    case ArrayTypeRef(base, dimensions) =>
+      "[" * dimensions + genArrayName(base)
+  }
+
+  def typeDataLiteral(name: String, isPrimitive: Boolean, isInterface: Boolean, isArrayClass: Boolean): js.Any =
+    js.Dynamic.literal(
+      name = name,
+      isPrimitive = isPrimitive,
+      isInterface = isInterface,
+      isArrayClass = isArrayClass
+    )
 
   def getStaticField(key: (ClassName, FieldName)): js.Any = 
     staticFields.get(key).getOrThrow(s"Static field ${key._2} on ${key._1} not found")

@@ -9,8 +9,6 @@ import org.scalajs.linker.StandardImpl
 import org.scalajs.linker.interface.IRFile
 import org.scalajs.dom.experimental.Fetch
 import scala.scalajs.js.typedarray._
-import org.scalajs.dom.raw.Blob
-import org.scalajs.dom.raw.BlobPropertyBag
 import org.scalajs.linker.standard.MemIRFileImpl
 
 class BrowserReader(val stdPath: String, val irPath: String) {
@@ -26,7 +24,7 @@ class BrowserReader(val stdPath: String, val irPath: String) {
     .flatMap { files =>
       Future.traverse(files.toList) { file =>
         loadFile(file).map { buf =>
-          new MemIRFileImpl(s"$irPath:${file}", None, new Int8Array(buf).toArray)
+          new MemIRFileImpl(file, None, new Int8Array(buf).toArray)
         }
       }
     }

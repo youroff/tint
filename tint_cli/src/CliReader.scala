@@ -3,6 +3,7 @@ package tint_cli
 import org.scalajs.linker.StandardImpl
 import org.scalajs.linker.NodeIRContainer
 import scala.concurrent.ExecutionContext.Implicits.global
+import org.scalajs.linker.interface.unstable.IRFileImpl
 
 class CliReader(val stdPath: String, val classPath: String) {
 
@@ -12,5 +13,12 @@ class CliReader(val stdPath: String, val classPath: String) {
     NodeIRContainer.fromClasspath(List(stdPath, classPath))
       .map(_._1)
       .flatMap(cache.cached _)
+      // .map { files =>
+      //   files.foreach { f =>
+      //     val ff = IRFileImpl.fromIRFile(f)
+      //     println(ff.path)
+      //   }
+      //   files
+      // }
   }
 }
