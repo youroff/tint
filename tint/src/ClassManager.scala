@@ -43,14 +43,14 @@ class ClassManager(val classes: Map[ClassName, LinkedClass]) {
 
     def lookupInInterfaces(className: ClassName): Option[MethodDef] = {
       val candidates = interfaceChain(lookupClassDef(className))
-      if (candidates.isEmpty)
-        None
-      else
-        Some(candidates.reduceLeft[(ClassName, MethodDef)] {
-          case ((cl, ml), (cr, mr)) if isSubclassOf(cl, cr) => (cl, ml)
-          case ((cl, ml), (cr, mr)) if isSubclassOf(cr, cl) => (cr, mr)
-          case ((cl, ml), (cr, mr)) => throw new AssertionError(s"Method overlap in interfaces: $cl and $cr are unrelated")
-        }._2)
+      val narrowed = candidates.filterNot {
+        case (className, _) => candidates.exists(c => isSubclassOf(c._1, className))
+      }
+      narrowed.size match {
+        case 1 => Some(narrowed(0)._2)
+        case 0 => None
+        case _ => throw new AssertionError("Ambiguous interfaces resolution")
+      }
     }
 
     superChain(classes.get(className))
