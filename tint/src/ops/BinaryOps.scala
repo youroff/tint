@@ -8,8 +8,8 @@ import Types._
 object BinaryOps {
 
   def apply(op: Code, l: js.Any, r: js.Any): js.Any = op match {
-    case === => js.special.strictEquals(l, r)
-    case !== => !js.special.strictEquals(l, r)
+    case === => l eq r
+    case !== => l ne r
     case String_+ => "" + l + r
     case x if 4 <= x && x <= 7 => execBool(op, asBoolean(l), asBoolean(r))
     case x if 8 <= x && x <= 24 => execInt(op, asInt(l), asInt(r))
@@ -46,23 +46,23 @@ object BinaryOps {
   }
 
   private def execLong(op: Code, l: LongInstance, r: LongInstance): js.Any = op match {
-    case Long_+ => l >= r
-    case Long_- => l - r
-    case Long_* => l * r
-    case Long_/ => l / r
-    case Long_% => l % r
-    case Long_| => l | r
-    case Long_& => l & r
-    case Long_^ => l ^ r
-    case Long_<< => l << r
-    case Long_>>> => l >>> r
-    case Long_>> => l >> r
-    case Long_== => l == r
-    case Long_!= => l != r
-    case Long_< => l < r
-    case Long_<= => l <= r
-    case Long_> => l > r
-    case Long_>= => l >= r
+    case Long_+ => new LongInstance(l.value + r.value)
+    case Long_- => new LongInstance(l.value - r.value)
+    case Long_* => new LongInstance(l.value * r.value)
+    case Long_/ => new LongInstance(l.value / r.value)
+    case Long_% => new LongInstance(l.value % r.value)
+    case Long_| => new LongInstance(l.value | r.value)
+    case Long_& => new LongInstance(l.value & r.value)
+    case Long_^ => new LongInstance(l.value ^ r.value)
+    case Long_<< => new LongInstance(l.value << r.value)
+    case Long_>>> => new LongInstance(l.value >>> r.value)
+    case Long_>> => new LongInstance(l.value >> r.value)
+    case Long_== => l.value == r.value
+    case Long_!= => l.value != r.value
+    case Long_< => l.value < r.value
+    case Long_<= => l.value <= r.value
+    case Long_> => l.value > r.value
+    case Long_>= => l.value >= r.value
   }
 
   private def execFloat(op: Code, l: Float, r: Float): js.Any = op match {

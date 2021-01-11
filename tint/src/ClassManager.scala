@@ -28,23 +28,33 @@ class ClassManager(val classes: Map[ClassName, LinkedClass]) {
   }
 
   def lookupMethodDef(className: ClassName, methodName: MethodName, nspace: MemberNamespace): MethodDef = {
-    def superChain(pivot: Option[ClassName]): Option[MethodDef] = pivot.flatMap { className =>
-      val classDef = lookupClassDef(className)
-      classDef.methods.find { methodDef =>
-        methodDef.value.methodName == methodName &&
-        methodDef.value.flags.namespace == nspace
-      }.map(_.value).orElse(superChain(classDef.superClass.map(_.name)))
+    def methodMatch(m: MethodDef): Boolean =
+      m.methodName == methodName && m.flags.namespace == nspace && m.body.isDefined
+
+    def superChain(pivot: Option[LinkedClass]): Option[MethodDef] = pivot.flatMap { classDef =>
+      classDef.methods.map(_.value).find(methodMatch)
+        .orElse(superChain(classDef.superClass.map(_.name).flatMap(classes.get(_))))
     }
 
-    // def interfaceChain(pivot: ClassName): Option[MethodDef] = {
-    //   val classDef = lookupClassDef(className)
-    //   classDef.interfaces.find { ifaceName =>
-    //     // val ifaceDef = lookupClassDef(ifaceName)
-    //   }
-    // }
+    def interfaceChain(pivot: LinkedClass): List[(ClassName, MethodDef)] = {
+      pivot.methods.map(_.value).filter(methodMatch).map((pivot.className, _)) ++
+      pivot.interfaces.map(_.name).map(lookupClassDef).flatMap(interfaceChain)
+    }
 
-    superChain(Some(className))
-      // .orElse()
+    def lookupInInterfaces(className: ClassName): Option[MethodDef] = {
+      val candidates = interfaceChain(lookupClassDef(className))
+      if (candidates.isEmpty)
+        None
+      else
+        Some(candidates.reduceLeft[(ClassName, MethodDef)] {
+          case ((cl, ml), (cr, mr)) if isSubclassOf(cl, cr) => (cl, ml)
+          case ((cl, ml), (cr, mr)) if isSubclassOf(cr, cl) => (cr, mr)
+          case ((cl, ml), (cr, mr)) => throw new AssertionError(s"Method overlap in interfaces: $cl and $cr are unrelated")
+        }._2)
+    }
+
+    superChain(classes.get(className))
+      .orElse(lookupInInterfaces(className))
       .getOrThrow(s"No method $methodName in $className")
   }
 
@@ -62,54 +72,6 @@ class ClassManager(val classes: Map[ClassName, LinkedClass]) {
 
   def lookupClassInstance(typeRef: TypeRef, orElse: => Instance): Instance =
     classInstances.getOrElseUpdate(typeRef, orElse)
-
-  def genTypeData(typeRef: TypeRef): js.Any = typeRef match {
-    case ClassRef(className) => 
-      val classDef = lookupClassDef(className)
-      typeDataLiteral(classDef.fullName, false, classDef.kind == Interface, false)
-    case arrRef @ ArrayTypeRef(_, _) =>
-      typeDataLiteral(genArrayName(arrRef), false, false, true)
-    case PrimRef(NoType) => typeDataLiteral("void", true, false, false)
-    case PrimRef(BooleanType) => typeDataLiteral("boolean", true, false, false)
-    case PrimRef(CharType) => typeDataLiteral("char", true, false, false)
-    case PrimRef(ByteType) => typeDataLiteral("byte", true, false, false)
-    case PrimRef(ShortType) => typeDataLiteral("short", true, false, false)
-    case PrimRef(IntType) => typeDataLiteral("int", true, false, false)
-    case PrimRef(LongType) => typeDataLiteral("long", true, false, false)
-    case PrimRef(FloatType) => typeDataLiteral("float", true, false, false)
-    case PrimRef(DoubleType) => typeDataLiteral("double", true, false, false)
-    case PrimRef(NullType) => typeDataLiteral("scala.runtime.Null$", true, false, false)
-    case PrimRef(NothingType) => typeDataLiteral("scala.runtime.Nothing$", true, false, false)
-  }
-
-  def genArrayName(typeRef: TypeRef): String = typeRef match {
-    case PrimRef(tpe) =>
-      tpe match {
-        case NoType      => "V"
-        case BooleanType => "Z"
-        case CharType    => "C"
-        case ByteType    => "B"
-        case ShortType   => "S"
-        case IntType     => "I"
-        case LongType    => "J"
-        case FloatType   => "F"
-        case DoubleType  => "D"
-        case NullType    => "N"
-        case NothingType => "E"
-      }
-    case ClassRef(className) =>
-      "L" + className.nameString
-    case ArrayTypeRef(base, dimensions) =>
-      "[" * dimensions + genArrayName(base)
-  }
-
-  def typeDataLiteral(name: String, isPrimitive: Boolean, isInterface: Boolean, isArrayClass: Boolean): js.Any =
-    js.Dynamic.literal(
-      name = name,
-      isPrimitive = isPrimitive,
-      isInterface = isInterface,
-      isArrayClass = isArrayClass
-    )
 
   def getStaticField(key: (ClassName, FieldName)): js.Any = 
     staticFields.get(key).getOrThrow(s"Static field ${key._2} on ${key._1} not found")

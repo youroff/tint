@@ -10,6 +10,7 @@ import org.scalajs.ir.Trees._
 import org.scalajs.ir.Types._
 import org.scalajs.ir.Position
 import org.scalajs.linker.interface.unstable.ModuleInitializerImpl._
+import org.scalajs.linker.standard.MemIRFileImpl
 
 @JSExportTopLevel("Interpreter")
 class Interpreter(
@@ -23,6 +24,11 @@ class Interpreter(
   def run() = {
     println("Reading IR...")
     reader.irFiles.flatMap { irFiles =>
+      // irFiles.foreach { f =>
+      //   f.asInstanceOf[MemIRFileImpl].tree.foreach {
+      //     classDef => println(classDef.name)
+      //   }
+      // }
       println(s"Linking ${irFiles.size} files")
       Linker.link(irFiles, ModuleInitializer.mainMethodWithArgs(mainClass, mainMethod))
     }.foreach { moduleSet =>

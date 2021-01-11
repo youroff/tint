@@ -203,6 +203,28 @@ final class NameGen {
     })
   }
 
+  def genArrayName(typeRef: TypeRef): String = typeRef match {
+    case PrimRef(tpe) =>
+      tpe match {
+        case NoType      => "V"
+        case BooleanType => "Z"
+        case CharType    => "C"
+        case ByteType    => "B"
+        case ShortType   => "S"
+        case IntType     => "I"
+        case LongType    => "J"
+        case FloatType   => "F"
+        case DoubleType  => "D"
+        case NullType    => "N"
+        case NothingType => "E"
+      }
+    case ClassRef(className) =>
+      "L" + className.nameString
+    case ArrayTypeRef(base, dimensions) =>
+      "[" * dimensions + genArrayName(base)
+  }
+
+
   def genOriginalName(name: Name, originalName: OriginalName,
       jsName: String): OriginalName = {
     genOriginalName(name.encoded, originalName, jsName)
