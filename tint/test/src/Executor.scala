@@ -25,7 +25,7 @@ object ExecutorTests extends TestSuite{
       executor.eval(Block(List(
         Assign(VarRef(LocalIdent(x))(IntType), IntLiteral(0))
       )))(envX) ==> js.undefined
-      envX.read(x) ==> 0
+      envX.get(x) ==> 0
     }
 
     test("If then else basic operation") {
@@ -50,7 +50,7 @@ object ExecutorTests extends TestSuite{
         Assign(refX, BinaryOp(BinaryOp.Int_-, refX, IntLiteral(1)))
       )
       executor.eval(exp)(envX)
-      envX.read(x) ==> 0
+      envX.get(x) ==> 0
     }
 
     test("Boxing of Chars") {
@@ -125,12 +125,12 @@ object ExecutorTests extends TestSuite{
         Throw(StringLiteral("evil error")),
         Assign(refX, IntLiteral(0))
       )
-      envX.read(x) ==> 10
+      envX.get(x) ==> 10
       val e = intercept[js.JavaScriptException] {
         executor.eval(exp)(envX)
       }
       e.getMessage() ==> "evil error"
-      envX.read(x) ==> 0      
+      envX.get(x) ==> 0      
     }
   }
 }

@@ -13,9 +13,18 @@ class ClassManager(val classes: Map[ClassName, LinkedClass]) {
   val staticFields: mutable.Map[(ClassName, FieldName), js.Any] = mutable.Map()
   val classInstances: mutable.Map[TypeRef, Instance] = mutable.Map()
   val modules: mutable.Map[ClassName, Instance] = mutable.Map()
+  val memberCache: mutable.Map[ClassName, Set[ClassName]] = mutable.Map()
+  val methodCache: mutable.Map[(ClassName, MethodName, MemberNamespace), MethodDef] = mutable.Map()
   val names = new utils.NameGen()
 
   classes.values.foreach { linkedClass =>
+
+    memberCache.put(linkedClass.className, Set.from(linkedClass.ancestors))
+
+    linkedClass.methods.map(_.value).foreach { method =>
+      methodCache.put((linkedClass.className, method.name.name, method.flags.namespace), method)
+    }
+
     linkedClass.fields.foreach {
       case FieldDef(flags, FieldIdent(name), _, tpe) if flags.namespace.isStatic =>
         staticFields.update((linkedClass.className, name), Types.zeroOf(tpe))
@@ -31,9 +40,9 @@ class ClassManager(val classes: Map[ClassName, LinkedClass]) {
     def methodMatch(m: MethodDef): Boolean =
       m.methodName == methodName && m.flags.namespace == nspace && m.body.isDefined
 
-    def superChain(pivot: Option[LinkedClass]): Option[MethodDef] = pivot.flatMap { classDef =>
-      classDef.methods.map(_.value).find(methodMatch)
-        .orElse(superChain(classDef.superClass.map(_.name).flatMap(classes.get(_))))
+    def superChain(pivot: Option[ClassName]): Option[MethodDef] = pivot.flatMap { className =>
+      methodCache.get((className, methodName, nspace))
+        .orElse(superChain(classes.get(className).flatMap(_.superClass).map(_.name)))
     }
 
     def interfaceChain(pivot: LinkedClass): List[(ClassName, MethodDef)] = {
@@ -53,15 +62,9 @@ class ClassManager(val classes: Map[ClassName, LinkedClass]) {
       }
     }
 
-    superChain(classes.get(className))
+    superChain(Some(className))
       .orElse(lookupInInterfaces(className))
       .getOrThrow(s"No method $methodName in $className")
-  }
-
-  def lookupInitializer(name: ClassName): MethodDef = {
-    lookupClassDef(name).methods
-      .find(_.value.methodName == NoArgConstructorName)
-      .getOrThrow(s"Constructor for $name not found").value
   }
 
   def loadModule(className: ClassName, orElse: => Instance): Instance =
@@ -99,11 +102,15 @@ class ClassManager(val classes: Map[ClassName, LinkedClass]) {
    * - recursively call on a superClass of left className
    * - recursively check interfaces using the same algorithm
   */
+  // def isSubclassOf(lhs: ClassName, rhs: ClassName): Boolean = {
+  //   val classDef = lookupClassDef(lhs)
+  //   lhs.equals(rhs) ||
+  //   classDef.superClass.map(_.name).map(isSubclassOf(_, rhs)).getOrElse(false) ||
+  //   classDef.interfaces.map(_.name).exists(isSubclassOf(_, rhs))
+  // }
+
   def isSubclassOf(lhs: ClassName, rhs: ClassName): Boolean = {
-    val classDef = lookupClassDef(lhs)
-    lhs.equals(rhs) ||
-    classDef.superClass.map(_.name).map(isSubclassOf(_, rhs)).getOrElse(false) ||
-    classDef.interfaces.map(_.name).exists(isSubclassOf(_, rhs))
+    memberCache.get(lhs).get.contains(rhs)
   }
 }
 

@@ -19,22 +19,22 @@ object EnvTests extends TestSuite{
 
       val y = LocalName("y")
       val envY = envX.bind(y, 1)
-      envX.read(x) ==> envY.read(x)
+      envX.get(x) ==> envY.get(x)
 
-      envY.assign(x, 10)
-      envX.read(x).asInstanceOf[Int] ==> 10
-      envY.read(x).asInstanceOf[Int] ==> 10
+      envY.set(x, 10)
+      envX.get(x).asInstanceOf[Int] ==> 10
+      envY.get(x).asInstanceOf[Int] ==> 10
       
       val envShadowed = envX.bind(x, 0)
-      envX.assign(x, 5)
-      assert(envShadowed.read(x) != envX.read(x))
+      envX.set(x, 5)
+      assert(envShadowed.get(x) != envX.get(x))
     }
 
     test("missing binding") {
       val env = Env.empty
       val ident = LocalName("x")
       val e = intercept[java.lang.AssertionError] {
-        env.read(ident)
+        env.get(ident)
       }
       e.getMessage() ==> "No variable LocalName<x> in Env"
     }

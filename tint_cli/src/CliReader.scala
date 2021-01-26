@@ -13,12 +13,5 @@ class CliReader(val stdPath: String, val classPath: String) {
     NodeIRContainer.fromClasspath(List(stdPath, classPath))
       .map(_._1)
       .flatMap(cache.cached _)
-      // .map { files =>
-      //   files.foreach { f =>
-      //     val ff = IRFileImpl.fromIRFile(f)
-      //     println(ff.path)
-      //   }
-      //   files
-      // }
   }
 }

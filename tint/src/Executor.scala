@@ -15,6 +15,12 @@ import tint.ops._
 import tint.js._
 import Types.TypeOps
 
+/**
+  * Executor is an object performing the evaluation
+  * and maintaining the global state of the program.
+  *
+  * @param classManager - an instance of ClassManager
+  */
 class Executor(val classManager: ClassManager) {
   val jsClasses: mutable.Map[ClassName, js.Dynamic] = mutable.Map()
   val jsModules: mutable.Map[ClassName, js.Any] = mutable.Map()
@@ -27,6 +33,14 @@ class Executor(val classManager: ClassManager) {
     eval(program)(Env.empty)
   }
 
+  /**
+    * Eval loop entry point. This recursive function is walking the tree
+    * and returning the result of evaluation as well as mutating the global state.
+    *
+    * @param program - a piece of AST to evaluate
+    * @param env - an instance of current Environment passed implicitly
+    * @return - a result of evaluation of type js.Any
+    */
   def eval(program: Tree)(implicit env: Env): js.Any = program match {
     case Block(trees) => evalStmts(trees)._1
     case Skip() => ()
@@ -43,7 +57,7 @@ class Executor(val classManager: ClassManager) {
     case Undefined() => js.undefined
     case ArrayValue(typeRef, value) => ArrayInstance.fromList(typeRef, value map eval)
     case This() => env.getThis
-    case VarRef(LocalIdent(name)) => env.read(name)
+    case VarRef(LocalIdent(name)) => env.get(name)
 
     case JSLinkingInfo() => scala.scalajs.runtime.linkingInfo
 
@@ -124,7 +138,6 @@ class Executor(val classManager: ClassManager) {
           case JSFieldDef(flags, name, ftpe) =>
             throw new AssertionError("Trying to init JSField on a Scala class")
         }
-
         attachExportedMembers(instance.asInstanceOf[js.Dynamic], linkedClass)
       }
 
@@ -156,7 +169,7 @@ class Executor(val classManager: ClassManager) {
     }
 
     case Throw(e) =>
-      new js.Function("e", "throw e;").asInstanceOf[js.Function1[js.Any, js.Any]](eval(e))
+      throw new js.JavaScriptException(eval(e))
 
     case If(cond, thenp, elsep) =>
       if (Types.asBoolean(eval(cond))) eval(thenp) else eval(elsep)
@@ -210,10 +223,9 @@ class Executor(val classManager: ClassManager) {
     case JSTypeOfGlobalRef(JSGlobalRef(name)) =>
       js.eval(s"typeof $name").asInstanceOf[String]
 
-    case JSNew(ctor, args) =>
-      new js.Function("clazz", "args", s"return new clazz(...args);")
-        .asInstanceOf[js.Function2[js.Any, js.Array[_], js.Any]]
-        .apply(eval(ctor), js.Array(evalSpread(args): _*))
+    case JSNew(ctorTree, args) =>
+      val ctor = eval(ctorTree).asInstanceOf[js.Dynamic]
+      js.Dynamic.newInstance(ctor)(evalSpread(args): _*)
 
     case JSArrayConstr(items) =>
       js.Array(evalSpread(items): _*)
@@ -285,6 +297,7 @@ class Executor(val classManager: ClassManager) {
   }
 
   def evalArgs(args: List[ParamDef], values: List[Tree])(implicit env: Env): Map[LocalName, js.Any] = {
+    assert(args.size == values.size, "argument and values list sizes don't match")
     args.map(_.name.name).zip(values map eval).toMap
   }
 
@@ -311,7 +324,7 @@ class Executor(val classManager: ClassManager) {
 
   def evalAssign(selector: Tree, value: js.Any)(implicit env: Env): js.Any = selector match {
     case VarRef(LocalIdent(name)) =>
-      env.assign(name, value)
+      env.set(name, value)
 
     case ArraySelect(array, index) =>
       val instance = eval(array).asInstanceOf[ArrayInstance]
@@ -394,7 +407,7 @@ class Executor(val classManager: ClassManager) {
     }
   }
 
-  def evalAsInstanceOf(value: js.Any, tpe: Type)(implicit env: Env): js.Any = value match {
+  def evalAsInstanceOf(value: js.Any, tpe: Type): js.Any = value match {
     case null => Types.zeroOf(tpe)
     case x if evalIsInstanceOf(x, tpe) => x
     case _ => throw new ClassCastException()
@@ -511,10 +524,66 @@ class Executor(val classManager: ClassManager) {
     createJSClass(className, Nil, Env.empty)
   })
 
+  // def createJSClass(className: ClassName, captureValues: List[Tree], topEnv: Env): js.Dynamic = {
+  //   val linkedClass = classManager.lookupClassDef(className) 
+  //   val jsClass = names.genName(className)
+
+  //   implicit val env = Env.empty.bind(
+  //     evalArgs(linkedClass.jsClassCaptures.getOrElse(Nil), captureValues)(topEnv)
+  //   )
+
+  //   val ctorDef = linkedClass.exportedMembers.map(_.value).find {
+  //     case JSMethodDef(_, StringLiteral("constructor"), _, _) => true
+  //     case _ => false
+  //   }.getOrThrow(s"Cannot find constructor in ${linkedClass.className} exportedMembers").asInstanceOf[JSMethodDef]
+  //   val (preludeTree, superArgs, epilogTree) = splitJSConstructor(ctorDef.body)
+    
+  //   val prelude = { (args: js.Array[js.Any]) =>
+  //     val argsMap = ctorDef.args.map(_.name.name).zip(args).toMap
+  //     evalStmts(preludeTree)(env.bind(argsMap))._2
+  //   } : js.Function1[js.Array[js.Any], Env]
+
+  //   val evalSuperArgs = { (env: Env) =>
+  //     js.Array(evalSpread(superArgs)(env): _*)
+  //   } : js.Function1[Env, js.Array[js.Any]]
+
+  //   val epilog = { (thiz: js.Object, env: Env) =>
+  //     attachFields(thiz, linkedClass)(env)
+  //     eval(Block(epilogTree))(env.setThis(thiz))
+  //   } : js.Function2[js.Object, Env, js.Any]
+
+  //   val extending = { () =>
+  //     linkedClass.jsSuperClass.map(eval).orElse {
+  //       linkedClass.superClass.map(_.name).map(loadJSConstructor)
+  //     }.getOrThrow("JSClass must have a super class").asInstanceOf[js.Object]
+  //   } : js.Function0[js.Object]
+
+  //   val classInstance = new js.Function(
+  //     s"prelude",
+  //     s"evalSuperArgs",
+  //     s"epilog",
+  //     s"superClass",
+  //     s"""return class $jsClass extends superClass() {
+  //       constructor(...args) {
+  //         const env = prelude(args);
+  //         const superArgs = evalSuperArgs(env)
+  //         super(...superArgs);
+  //         epilog(this, env);
+  //       }
+  //     };"""
+  //   ).asInstanceOf[js.Function4[js.Function, js.Function, js.Function, js.Function, js.Any]].apply(
+  //     prelude,
+  //     evalSuperArgs,
+  //     epilog,
+  //     extending
+  //   ).asInstanceOf[js.Dynamic]
+
+  //   attachExportedMembers(classInstance.selectDynamic("prototype"), linkedClass)
+  //   classInstance
+  // }
+
   def createJSClass(className: ClassName, captureValues: List[Tree], topEnv: Env): js.Dynamic = {
     val linkedClass = classManager.lookupClassDef(className) 
-    val jsClass = names.genName(className)
-
     implicit val env = Env.empty.bind(
       evalArgs(linkedClass.jsClassCaptures.getOrElse(Nil), captureValues)(topEnv)
     )
@@ -524,49 +593,33 @@ class Executor(val classManager: ClassManager) {
       case _ => false
     }.getOrThrow(s"Cannot find constructor in ${linkedClass.className} exportedMembers").asInstanceOf[JSMethodDef]
     val (preludeTree, superArgs, epilogTree) = splitJSConstructor(ctorDef.body)
-    
-    val prelude = { (args: js.Array[js.Any]) =>
+
+    val superClass = linkedClass.jsSuperClass.map(eval).orElse {
+      linkedClass.superClass.map(_.name).map(loadJSConstructor)
+    }.getOrThrow("JSClass must have a super class").asInstanceOf[js.Dynamic]
+
+    val parents = js.Dynamic.literal(ParentClass = superClass).asInstanceOf[RawParents]
+
+    def preSuperStatements(args: Seq[js.Any]): Env = {
       val argsMap = ctorDef.args.map(_.name.name).zip(args).toMap
       evalStmts(preludeTree)(env.bind(argsMap))._2
-    } : js.Function1[js.Array[js.Any], Env]
+    }
 
-    val evalSuperArgs = { (env: Env) =>
-      js.Array(evalSpread(superArgs)(env): _*)
-    } : js.Function1[Env, js.Array[js.Any]]
+    def evalSuperArgs(env: Env): Seq[js.Any] =
+      evalSpread(superArgs)(env)
 
-    val epilog = { (thiz: js.Object, env: Env) =>
-      attachFields(thiz, linkedClass)(env)
+    def postSuperStatements(thiz: js.Any, env: Env): Unit = {
+      attachFields(thiz.asInstanceOf[js.Object], linkedClass)(env)
       eval(Block(epilogTree))(env.setThis(thiz))
-    } : js.Function2[js.Object, Env, js.Any]
+    }
 
-    val extending = { () =>
-      linkedClass.jsSuperClass.map(eval).orElse {
-        linkedClass.superClass.map(_.name).map(loadJSConstructor)
-      }.getOrThrow("JSClass must have a super class").asInstanceOf[js.Object]
-    } : js.Function0[js.Object]
-
-    val classInstance = new js.Function(
-      s"prelude",
-      s"evalSuperArgs",
-      s"epilog",
-      s"superClass",
-      s"""return class $jsClass extends superClass() {
-        constructor(...args) {
-          const env = prelude(args);
-          const superArgs = evalSuperArgs(env)
-          super(...superArgs);
-          epilog(this, env);
-        }
-      };"""
-    ).asInstanceOf[js.Function4[js.Function, js.Function, js.Function, js.Function, js.Any]].apply(
-      prelude,
-      evalSuperArgs,
-      epilog,
-      extending
-    ).asInstanceOf[js.Dynamic]
-
-    attachExportedMembers(classInstance.selectDynamic("prototype"), linkedClass)
-    classInstance
+    class Subclass(preSuperEnv: Env) extends parents.ParentClass(evalSuperArgs(preSuperEnv): _*) {
+      def this(args: js.Any*) = this(preSuperStatements(args))
+      postSuperStatements(this, preSuperEnv)
+    }
+    val ctor = js.constructorOf[Subclass]
+    attachExportedMembers(ctor.selectDynamic("prototype"), linkedClass)
+    ctor
   }
 
   def attachExportedMembers(dynamic: js.Dynamic, linkedClass: LinkedClass)(implicit env: Env) =

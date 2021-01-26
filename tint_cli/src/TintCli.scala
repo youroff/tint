@@ -13,7 +13,7 @@ import org.scalajs.linker.interface.ModuleInitializer
 object TintCli {
   def main(args: Array[String]): Unit = {
     val irReader = new CliReader(
-      "std/scalajs-library_2.13-1.3.1.jar",
+      "std/scalajs-library_2.13-1.4.0.jar",
       "sample/target/scala-2.13/classes/sample"
     )
 

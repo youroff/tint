@@ -12,7 +12,7 @@ lazy val tint = project
     Compile / unmanagedSourceDirectories += baseDirectory.value / "src",
     Test / unmanagedSourceDirectories += baseDirectory.value / "test/src",
     libraryDependencies ++= Seq(
-      "org.scala-js" %%% "scalajs-linker" % "1.3.1",
+      "org.scala-js" %%% "scalajs-linker" % "1.4.0",
       "com.lihaoyi" %%% "utest" % "0.7.5" % "test",
     ),
     testFrameworks += new TestFramework("utest.runner.Framework"),
@@ -29,7 +29,7 @@ lazy val tint_cli = project
   .settings(
     Compile / unmanagedSourceDirectories += baseDirectory.value / "src",
     libraryDependencies ++= Seq(
-      "org.scala-js" %%% "scalajs-linker" % "1.3.1"
+      "org.scala-js" %%% "scalajs-linker" % "1.4.0"
     ),
     scalaJSUseMainModuleInitializer := true,
     scalaJSLinkerConfig ~= {
@@ -44,7 +44,7 @@ lazy val tint_browser = project
   .settings(
     Compile / unmanagedSourceDirectories += baseDirectory.value / "src",
     libraryDependencies ++= Seq(
-      "org.scala-js" %%% "scalajs-linker" % "1.3.1",
+      "org.scala-js" %%% "scalajs-linker" % "1.4.0",
       "org.scala-js" %%% "scalajs-dom" % "1.1.0"
     ),
     scalaJSUseMainModuleInitializer := false,

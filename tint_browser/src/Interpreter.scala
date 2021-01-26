@@ -17,22 +17,23 @@ class Interpreter(
   val irPath: String,
   val mainClass: String,
   val mainMethod: String = "main",
-  val stdPath: String = "scalajs-library_2.13-1.3.1.jar"
+  val stdPath: String = "scalajs-library_2.13-1.4.0.jar"
 ) extends js.Object {
   val reader = new BrowserReader(stdPath, irPath)
 
   def run() = {
     println("Reading IR...")
     reader.irFiles.flatMap { irFiles =>
-      // irFiles.foreach { f =>
-      //   f.asInstanceOf[MemIRFileImpl].tree.foreach {
-      //     classDef => println(classDef.name)
-      //   }
-      // }
       println(s"Linking ${irFiles.size} files")
       Linker.link(irFiles, ModuleInitializer.mainMethodWithArgs(mainClass, mainMethod))
     }.foreach { moduleSet =>
       println("ModuleSet loaded...")
+      moduleSet.modules.foreach { mod =>
+        println(mod.id)
+        println(mod.externalDependencies)
+        println(mod.internalDependencies)
+        println(mod.topLevelExports)
+      }
       val executor = new Executor(ClassManager.fromModuleSet(moduleSet))
       implicit val pos = Position.NoPosition
       moduleSet.modules.foreach { module =>

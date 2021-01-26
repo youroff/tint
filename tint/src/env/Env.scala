@@ -17,12 +17,12 @@ class Env(table: Map[LocalName, EnvVar], ths: Option[js.Any]) extends js.Object 
   }
 
   /** Updates variable value */
-  def assign(name: LocalName, value: js.Any) {
+  def set(name: LocalName, value: js.Any) {
     lookup(name).update(value)
   }
 
   /** Reads variable value */
-  def read(name: LocalName): js.Any = {
+  def get(name: LocalName): js.Any = {
     lookup(name).value
   }
 

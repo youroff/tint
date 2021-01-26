@@ -19,15 +19,15 @@
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/sbt/1.4.5/sbt-1.4.5.jar",
             "/Users/youroff/.sbt/boot/scala-2.12.12/lib/scala-library.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/ch/epfl/scala/sbt-bloop_2.12_1.0/1.4.6-15-209c2a5c/sbt-bloop-1.4.6-15-209c2a5c.jar",
-            "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-js/sbt-scalajs/scala_2.12/sbt_1.0/1.3.1/jars/sbt-scalajs.jar",
+            "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-js/sbt-scalajs/scala_2.12/sbt_1.0/1.4.0/jars/sbt-scalajs.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/main_2.12/1.4.5/main_2.12-1.4.5.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/io_2.12/1.4.0/io_2.12-1.4.0.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/net/java/dev/jna/jna/5.5.0/jna-5.5.0.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/net/java/dev/jna/jna-platform/5.5.0/jna-platform-5.5.0.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/com/google/code/gson/gson/2.7/gson-2.7.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar",
-            "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-linker-interface_2.12/1.3.1/scalajs-linker-interface_2.12-1.3.1.jar",
-            "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-sbt-test-adapter_2.12/1.3.1/scalajs-sbt-test-adapter_2.12-1.3.1.jar",
+            "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-linker-interface_2.12/1.4.0/scalajs-linker-interface_2.12-1.4.0.jar",
+            "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-sbt-test-adapter_2.12/1.4.0/scalajs-sbt-test-adapter_2.12-1.4.0.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.portable-scala/sbt-platform-deps/scala_2.12/sbt_1.0/1.0.0/jars/sbt-platform-deps.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-js-envs_2.12/1.1.1/scalajs-js-envs_2.12-1.1.1.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-env-nodejs_2.12/1.1.1/scalajs-env-nodejs_2.12-1.1.1.jar",
@@ -52,7 +52,7 @@
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/librarymanagement-ivy_2.12/1.4.1/librarymanagement-ivy_2.12-1.4.1.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/compiler-interface/1.4.3/compiler-interface-1.4.3.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/zinc-compile_2.12/1.4.3/zinc-compile_2.12-1.4.3.jar",
-            "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-ir_2.12/1.3.1/scalajs-ir_2.12-1.3.1.jar",
+            "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-ir_2.12/1.4.0/scalajs-ir_2.12-1.4.0.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-logging_2.12/1.1.1/scalajs-logging_2.12-1.1.1.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/test-interface/1.0/test-interface-1.0.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/com/google/jimfs/jimfs/1.1/jimfs-1.1.jar",
@@ -231,22 +231,22 @@
                 {
                     "organization": "org.scala-js",
                     "name": "sbt-scalajs",
-                    "version": "1.3.1",
+                    "version": "1.4.0",
                     "configurations": "compile",
                     "artifacts": [
                         {
                             "name": "sbt-scalajs",
-                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-js/sbt-scalajs/scala_2.12/sbt_1.0/1.3.1/jars/sbt-scalajs.jar"
+                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-js/sbt-scalajs/scala_2.12/sbt_1.0/1.4.0/jars/sbt-scalajs.jar"
                         },
                         {
                             "name": "sbt-scalajs",
                             "classifier": "sources",
-                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-js/sbt-scalajs/scala_2.12/sbt_1.0/1.3.1/srcs/sbt-scalajs-sources.jar"
+                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-js/sbt-scalajs/scala_2.12/sbt_1.0/1.4.0/srcs/sbt-scalajs-sources.jar"
                         },
                         {
                             "name": "sbt-scalajs",
                             "classifier": "javadoc",
-                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-js/sbt-scalajs/scala_2.12/sbt_1.0/1.3.1/docs/sbt-scalajs-javadoc.jar"
+                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-js/sbt-scalajs/scala_2.12/sbt_1.0/1.4.0/docs/sbt-scalajs-javadoc.jar"
                         }
                     ]
                 },
@@ -277,24 +277,24 @@
                 {
                     "organization": "org.scala-js",
                     "name": "scalajs-linker-interface_2.12",
-                    "version": "1.3.1",
+                    "version": "1.4.0",
                     "configurations": "default",
                     "artifacts": [
                         {
                             "name": "scalajs-linker-interface_2.12",
-                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-linker-interface_2.12/1.3.1/scalajs-linker-interface_2.12-1.3.1.jar"
+                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-linker-interface_2.12/1.4.0/scalajs-linker-interface_2.12-1.4.0.jar"
                         }
                     ]
                 },
                 {
                     "organization": "org.scala-js",
                     "name": "scalajs-sbt-test-adapter_2.12",
-                    "version": "1.3.1",
+                    "version": "1.4.0",
                     "configurations": "default",
                     "artifacts": [
                         {
                             "name": "scalajs-sbt-test-adapter_2.12",
-                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-sbt-test-adapter_2.12/1.3.1/scalajs-sbt-test-adapter_2.12-1.3.1.jar"
+                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-sbt-test-adapter_2.12/1.4.0/scalajs-sbt-test-adapter_2.12-1.4.0.jar"
                         }
                     ]
                 },
@@ -364,12 +364,12 @@
                 {
                     "organization": "org.scala-js",
                     "name": "scalajs-ir_2.12",
-                    "version": "1.3.1",
+                    "version": "1.4.0",
                     "configurations": "default",
                     "artifacts": [
                         {
                             "name": "scalajs-ir_2.12",
-                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-ir_2.12/1.3.1/scalajs-ir_2.12-1.3.1.jar"
+                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-js/scalajs-ir_2.12/1.4.0/scalajs-ir_2.12-1.4.0.jar"
                         }
                     ]
                 },
