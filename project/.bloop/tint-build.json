@@ -18,7 +18,7 @@
         "classpath": [
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/sbt/1.4.5/sbt-1.4.5.jar",
             "/Users/youroff/.sbt/boot/scala-2.12.12/lib/scala-library.jar",
-            "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/ch/epfl/scala/sbt-bloop_2.12_1.0/1.4.6-15-209c2a5c/sbt-bloop-1.4.6-15-209c2a5c.jar",
+            "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/ch/epfl/scala/sbt-bloop_2.12_1.0/1.4.6-21-464e4ec4/sbt-bloop-1.4.6-21-464e4ec4.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo.scala-sbt.org/scalasbt/sbt-plugin-releases/org.scala-js/sbt-scalajs/scala_2.12/sbt_1.0/1.4.0/jars/sbt-scalajs.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/main_2.12/1.4.5/main_2.12-1.4.5.jar",
             "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-sbt/io_2.12/1.4.0/io_2.12-1.4.0.jar",
@@ -219,12 +219,12 @@
                 {
                     "organization": "ch.epfl.scala",
                     "name": "sbt-bloop",
-                    "version": "1.4.6-15-209c2a5c",
+                    "version": "1.4.6-21-464e4ec4",
                     "configurations": "default",
                     "artifacts": [
                         {
                             "name": "sbt-bloop",
-                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/ch/epfl/scala/sbt-bloop_2.12_1.0/1.4.6-15-209c2a5c/sbt-bloop-1.4.6-15-209c2a5c.jar"
+                            "path": "/Users/youroff/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/ch/epfl/scala/sbt-bloop_2.12_1.0/1.4.6-21-464e4ec4/sbt-bloop-1.4.6-21-464e4ec4.jar"
                         }
                     ]
                 },

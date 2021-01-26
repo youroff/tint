@@ -51,6 +51,7 @@ lazy val tint_browser = project
     scalaJSLinkerConfig ~= {
       _.withModuleKind(ModuleKind.ESModule),
     },
+    scalacOptions += "-deprecation",
     Compile / fastOptJS / artifactPath := baseDirectory.value / "../stage/main.js"
   )
 

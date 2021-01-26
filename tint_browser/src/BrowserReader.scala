@@ -20,7 +20,7 @@ class BrowserReader(val stdPath: String, val irPath: String) {
   }
 
   private def loadIrFiles: Future[List[IRFile]] = Fetch.fetch(s"$irPath/list.txt")
-    .toFuture.flatMap(_.text.toFuture).map(_.split("\n").map(irPath + "/" + _))
+    .toFuture.flatMap(_.text().toFuture).map(_.split("\n").map(irPath + "/" + _))
     .flatMap { files =>
       Future.traverse(files.toList) { file =>
         loadFile(file).map { buf =>
@@ -40,7 +40,7 @@ class BrowserReader(val stdPath: String, val irPath: String) {
   }
 
   private def loadFile(file: String): Future[ArrayBuffer] = Fetch.fetch(file).toFuture
-    .flatMap(_.blob.toFuture)
+    .flatMap(_.blob().toFuture)
     .map(_.asInstanceOf[js.Dynamic])
     .flatMap(_.applyDynamic("arrayBuffer")().asInstanceOf[js.Promise[ArrayBuffer]].toFuture)
 
