@@ -5,7 +5,8 @@ import scala.scalajs.js
 import org.scalajs.ir.Names.LocalName
 import utils.Utils.OptionsOps
 
-class Env(table: Map[LocalName, EnvVar], ths: Option[js.Any]) extends js.Object {
+// class Env(table: Map[LocalName, EnvVar], ths: Option[js.Any]) extends js.Object {
+class Env(table: Map[LocalName, EnvVar], ths: Option[js.Any]) {
 
   /** Augments the environment with a variable binding: returns new Env */
   def bind(name: LocalName, value: js.Any) = {

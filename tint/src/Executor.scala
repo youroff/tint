@@ -592,6 +592,7 @@ class Executor(val classManager: ClassManager) {
       case JSMethodDef(_, StringLiteral("constructor"), _, _) => true
       case _ => false
     }.getOrThrow(s"Cannot find constructor in ${linkedClass.className} exportedMembers").asInstanceOf[JSMethodDef]
+
     val (preludeTree, superArgs, epilogTree) = splitJSConstructor(ctorDef.body)
 
     val superClass = linkedClass.jsSuperClass.map(eval).orElse {
@@ -606,7 +607,7 @@ class Executor(val classManager: ClassManager) {
     }
 
     def evalSuperArgs(env: Env): Seq[js.Any] =
-      evalSpread(superArgs)(env)
+      evalSpread(superArgs)(env).toSeq
 
     def postSuperStatements(thiz: js.Any, env: Env): Unit = {
       attachFields(thiz.asInstanceOf[js.Object], linkedClass)(env)
